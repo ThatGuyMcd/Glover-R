@@ -1,0 +1,280 @@
+--- a/src/common/rt64_glover_configuration.h
++++ b/src/common/rt64_glover_configuration.h
+@@ -52,6 +52,7 @@
+     struct GloverRectMotion {
+         uint64_t identity = 0;
+         bool sky = false;
++        bool ui = false;
+         int32_t wrapWidth = 0;
+         std::array<int32_t, 4> rect{};
+         std::array<int32_t, 4> previous{};
+@@ -82,7 +83,7 @@
+     }
+     inline bool matchGloverRectMotion(GloverRectMotion &cur, const GloverRectMotion &prev) {
+         cur.matched = false;
+-        if (!cur.identity || cur.identity != prev.identity || cur.sky != prev.sky || cur.texcoordFlipped != prev.texcoordFlipped) return false;
++        if (!cur.identity || cur.identity != prev.identity || cur.sky != prev.sky || cur.ui != prev.ui || cur.texcoordFlipped != prev.texcoordFlipped) return false;
+         const int cw = cur.rect[2] - cur.rect[0], ch = cur.rect[3] - cur.rect[1];
+         const int pw = prev.rect[2] - prev.rect[0], ph = prev.rect[3] - prev.rect[1];
+         if (cw <= 0 || ch <= 0 || pw <= 0 || ph <= 0) return false;
+@@ -104,6 +105,24 @@
+         cur.matched = true;
+         return true;
+     }
++    inline bool isGloverUiMatrix(uint32_t id) { return (id & 0xF0000000U) == 0x60000000U; }
++    inline uint32_t gloverUiMatrixId(uint32_t w0, uint32_t w1) {
++        return 0x60000000U | (w0 & 0xFFFFU) | ((w0 >> 4) & 0xF0000U) | ((w1 >> 4) & 0xFF00000U);
++    }
++    // Choose a unique pass by its persistent owners when a transition adds or
++    // removes graphics tasks. A tie is ambiguous and must retain authored data.
++    inline int gloverPreviousPass(const std::vector<uint64_t> &owners,
++        const std::vector<std::vector<uint64_t>> &history) {
++        unsigned best = 0; int index = -1;
++        for (unsigned p = 0; p < history.size(); ++p) {
++            unsigned score = 0;
++            for (auto id : owners) if (std::count(owners.begin(), owners.end(), id) == 1 &&
++                std::count(history[p].begin(), history[p].end(), id) == 1) ++score;
++            if (score > best) { best = score; index = int(p); }
++            else if (score && score == best) index = -1;
++        }
++        return index;
++    }
+     inline void setGloverSplitFrames(bool enabled) { gloverSplitFrames.store(enabled); }
+     inline bool usesGloverSplitFrames() { return gloverSplitFrames.load(); }
+ }
+--- a/src/gbi/rt64_gbi_f3d.cpp
++++ b/src/gbi/rt64_gbi_f3d.cpp
+@@ -23,7 +23,13 @@
+ namespace RT64 {
+     namespace GBI_F3D {
+         void matrix(State *state, DisplayList **dl) {
+-            state->rsp->matrix((*dl)->w1, (*dl)->p0(16, 8));
++            const uint32_t w0 = (*dl)->w0, w1 = (*dl)->w1;
++            const bool tagged = usesGloverSplitFrames() && (w0 & 0x00080000U);
++            const uint8_t params = tagged ? ((*dl)->p0(16, 8) & 7U) : (*dl)->p0(16, 8);
++            state->rsp->matrix(tagged ? (0x80000000U | (w1 & 0x007FFFFFU)) : w1, params);
++            if (usesGloverSplitFrames() && !(params & state->rsp->projMask))
++                state->rsp->gloverModelIds[state->rsp->modelMatrixStackSize - 1] = tagged ? gloverUiMatrixId(w0, w1) : 0;
++            
+         }
+ 
+         void popMatrix(State *state, DisplayList **dl) {
+@@ -252,6 +258,13 @@
+                         rdp.gloverRectMotion.sky = true;
+                         rdp.gloverRectMotion.wrapWidth = int32_t(sprite.width) * 4096 / scaleX;
+                     }
++                    if (usesGloverSplitFrames() && !background && !rdp.gloverScreenCover) {
++                        // Image + descriptor + strip identify static UI art. Reused
++                        // descriptors with a different image start a new history.
++                        rdp.gloverRectMotion.identity = 0x3000000000000000ULL |
++                            (uint64_t(image) << 32) | (uint64_t(address) << 9) | uint64_t(row);
++                        rdp.gloverRectMotion.ui = true;
++                    }
+                     rdp.drawTexRect(frameX, frameY + top * 4096 / scaleY,
+                         frameX + sprite.width * 4096 / scaleX, frameY + (top + rows) * 4096 / scaleY,
+                         G_TX_RENDERTILE, s, t, flipX ? -int32_t(scaleX) : scaleX,
+--- a/src/hle/rt64_rsp.h
++++ b/src/hle/rt64_rsp.h
+@@ -161,6 +161,7 @@
+         std::array<uint32_t, RSP_MAX_VERTICES> indices;
+         // Branch decisions belong to guest RSP vertex slots, not workload-local
+         // indices which become invalid when Glover advances to another task.
++        std::array<uint32_t, RSP_MATRIX_STACK_SIZE> gloverModelIds{};
+         std::array<float, RSP_MAX_VERTICES> gloverVertexScreenZ{};
+         std::array<float, RSP_MAX_VERTICES> gloverVertexClipW{};
+         std::bitset<RSP_MAX_VERTICES> gloverVertexValid;
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -91,6 +91,7 @@
+         modelViewProjChanged = false;
+         modelViewProjInserted = false;
+         gloverVertexValid.reset();
++        gloverModelIds.fill(0);
+         lightCount = 0;
+         lightsChanged = false;
+         vertexFogIndex = 0;
+@@ -562,7 +563,20 @@
+             uint32_t physicalAddress = modelMatrixPhysicalAddressStack[modelMatrixStackSize - 1];
+             uint32_t groupIndex = extended.curModelMatrixIdGroupIndex;
+             RocketPresentationMatrixBinding semantic{};
+-            if (state->rocketBackgroundPresentationActive) {
++            if (usesGloverSplitFrames() && gloverModelIds[modelMatrixStackSize - 1]) {
++                TransformGroup group = workload.drawData.transformGroups[groupIndex];
++                group.matrixId = gloverModelIds[modelMatrixStackSize - 1];
++                group.ordering = G_EX_ORDER_LINEAR;
++                group.decompose = false;
++                group.positionInterpolation = group.rotationInterpolation = group.scaleInterpolation =
++                    group.skewInterpolation = group.perspectiveInterpolation = G_EX_COMPONENT_INTERPOLATE;
++                group.vertexInterpolation = G_EX_COMPONENT_INTERPOLATE;
++                group.texcoordInterpolation = group.lookAtInterpolation = G_EX_COMPONENT_SKIP;
++                group.tileInterpolation = G_EX_COMPONENT_SKIP;
++                groupIndex = uint32_t(workload.drawData.transformGroups.size());
++                workload.drawData.transformGroups.emplace_back(group);
++            }
++            else if (state->rocketBackgroundPresentationActive) {
+                 // The enclosing display-list range proves the background owner.
+                 // A camera/unknown matrix lookup must not erase that identity.
+                 TransformGroup group = workload.drawData.transformGroups[groupIndex];
+--- a/src/gbi/rt64_gbi_rdp.cpp
++++ b/src/gbi/rt64_gbi_rdp.cpp
+@@ -135,8 +135,10 @@
+             state->rdp->gloverRectMotion = {};
+             // Checked host world-sprite call sites tag only the unused w0 bits.
+             // Depth remains entirely in w1, as on the original RDP.
+-            if (usesGloverSplitFrames() && ((*dl)->w0 & 0x00800000U))
+-                state->rdp->gloverRectMotion.identity = 0x1000000000000000ULL | ((*dl)->w0 & 0x007FFFFFU);
++            if (usesGloverSplitFrames() && ((*dl)->w0 & 0x00800000U)) {
++                state->rdp->gloverRectMotion.identity = 0x1000000000000000ULL | ((*dl)->w0 & 0x007FFFFCU);
++                state->rdp->gloverRectMotion.ui = ((*dl)->w0 & 1U) != 0;
++            }
+         }
+         
+         void setScissor(State *state, DisplayList **dl) {
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -1239,7 +1239,7 @@
+         drawCall.gloverScreenCover = gloverScreenCover;
+         drawCall.gloverRectMotion = gloverRectMotion;
+         drawCall.gloverRectMotion.rect = {drawRect.ulx, drawRect.uly, drawRect.lrx, drawRect.lry};
+-        if (drawCall.gloverRectMotion.identity && !drawCall.gloverRectMotion.sky)
++        if (drawCall.gloverRectMotion.identity && !drawCall.gloverRectMotion.sky && !drawCall.gloverRectMotion.ui)
+             drawCall.rectAspect = G_EX_ASPECT_ADJUST; // Same centred aspect correction as world projection.
+ 
+         if (flushedState) {
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1772,7 +1772,7 @@
+                             (call.callDesc.rect.uly <= fbPair.scissorRect.uly) &&
+                             (call.callDesc.rect.lrx >= fbPair.scissorRect.lrx) &&
+                             (call.callDesc.rect.lry >= fbPair.scissorRect.lry);
+-                        const bool rocketHudCandidate = !call.callDesc.gloverRectMotion.identity &&
++                        const bool rocketHudCandidate = (!call.callDesc.gloverRectMotion.identity || call.callDesc.gloverRectMotion.ui) &&
+                             ((proj.type == Projection::Type::Orthographic) ||
+                             ((proj.type == Projection::Type::Rectangle) && !fullFrameRect));
+                         if (rocketHudCandidate) {
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -316,25 +316,39 @@
+     void GameFrame::match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
+         tileInterpolationUsed = false;
+         lookAtInterpolationUsed = false;
+-        // Menus/transitions change the number and roles of graphics passes.
+-        // Use an authored frame until a compatible history exists.
+-        if (usesGloverSplitFrames() && workloads.size() != prevFrame.workloads.size()) {
+-            matched = false;
+-            return;
+-        }
+         matched = true;
++        auto uiOwners = [](const Workload &work) {
++            std::vector<uint64_t> ids;
++            for (auto g : work.drawData.worldTransformGroups) {
++                const auto id = work.drawData.transformGroups[g].matrixId;
++                if (isGloverUiMatrix(id)) ids.push_back(id);
++            }
++            for (uint32_t f = 0; f < work.fbPairCount; ++f)
++                for (uint32_t p = 0; p < work.fbPairs[f].projectionCount; ++p)
++                    for (uint32_t c = 0; c < work.fbPairs[f].projections[p].gameCallCount; ++c) {
++                        const auto &m = work.fbPairs[f].projections[p].gameCalls[c].callDesc.gloverRectMotion;
++                        if (m.ui && m.identity) ids.push_back(m.identity);
++                    }
++            return ids;
++        };
++        std::vector<std::vector<uint64_t>> uiHistory;
++        if (usesGloverSplitFrames()) for (auto w : prevFrame.workloads)
++            uiHistory.push_back(uiOwners(workloadQueue.workloads[w]));
+ 
+         thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
+         workloadsModified.clear();
+ 
+         for (uint32_t w = 0; w < workloads.size(); w++) {
+-            if (w >= prevFrame.workloads.size()) {
+-                continue;
+-            }
+-
+-            // We assume the workloads will be detected in the same order between frames.
++            int previous = int(w);
++            if (usesGloverSplitFrames()) {
++                const auto owners = uiOwners(workloadQueue.workloads[workloads[w]]);
++                if (!owners.empty()) previous = gloverPreviousPass(owners, uiHistory);
++                else if (workloads.size() != prevFrame.workloads.size()) previous = -1;
++            }
++            if (previous < 0 || uint32_t(previous) >= prevFrame.workloads.size()) continue;
++
+             GameFrameMap::WorkloadMap &workloadMap = frameMap.workloads[workloads[w]];
+-            workloadMap.prevWorkloadIndex = prevFrame.workloads[w];
++            workloadMap.prevWorkloadIndex = prevFrame.workloads[previous];
+             workloadMap.mapped = true;
+ 
+             Workload &curWorkload = workloadQueue.workloads[workloads[w]];
+@@ -815,8 +829,10 @@
+     void GameFrame::matchTransform(Workload &curWorkload, const Workload &prevWorkload, GameFrameMap::WorkloadMap &curWorkloadMap, const GameFrameMap::WorkloadMap *prevWorkloadMap, uint32_t curTransformIndex, uint32_t prevTransformIndex, ModifiedBuffers &modifiedBuffers) {
+         const auto &cg = curWorkload.drawData.transformGroups[curWorkload.drawData.worldTransformGroups[curTransformIndex]];
+         const auto &pg = prevWorkload.drawData.transformGroups[prevWorkload.drawData.worldTransformGroups[prevTransformIndex]];
+-        if (cg.rocketSky || pg.rocketSky) {
+-            if (!cg.rocketSky || !pg.rocketSky) return;
++        const bool ui = usesGloverSplitFrames() && isGloverUiMatrix(cg.matrixId);
++        if (ui && (!isGloverUiMatrix(pg.matrixId) || cg.matrixId != pg.matrixId)) return;
++        if (cg.rocketSky || pg.rocketSky || ui) {
++            if (!ui && (!cg.rocketSky || !pg.rocketSky)) return;
+             const uint32_t count = curWorkload.drawData.worldTransformVertexCount(curTransformIndex);
+             if (count != prevWorkload.drawData.worldTransformVertexCount(prevTransformIndex)) return;
+             const auto ct = rocketSkyTopology(curWorkload.drawData.faceIndices,
+@@ -934,13 +950,19 @@
+         ignoredIdVector.clear();
+ 
+         uint32_t transformCount = uint32_t(workload.drawData.worldTransformGroups.size());
++        std::unordered_map<uint32_t, unsigned> uiOwners;
++        if (usesGloverSplitFrames()) for (uint32_t i = 0; i < transformCount; ++i) {
++            const auto id = workload.drawData.transformGroups[workload.drawData.worldTransformGroups[i]].matrixId;
++            if (isGloverUiMatrix(id)) ++uiOwners[id];
++        }
+         for (uint32_t i = 0; i < transformCount; i++) {
+             const uint32_t groupIndex = workload.drawData.worldTransformGroups[i];
+             const TransformGroup &group = workload.drawData.transformGroups[groupIndex];
+             if (group.matrixId == G_EX_ID_AUTO) {
+                 continue;
+             }
+-            else if (group.matrixId == G_EX_ID_IGNORE) {
++            else if (group.matrixId == G_EX_ID_IGNORE ||
++                (isGloverUiMatrix(group.matrixId) && uiOwners[group.matrixId] != 1)) {
+                 ignoredIdVector.emplace_back(i);
+             }
+             else if (group.ordering == G_EX_ORDER_LINEAR) {
+--- a/src/render/rt64_transform_processor.cpp
++++ b/src/render/rt64_transform_processor.cpp
+@@ -74,7 +74,7 @@
+         uploads.clear();
+ 
+         for (uint32_t w : p.curFrame->workloads) {
+-            const bool prevFrameValid = (p.prevFrame != nullptr);
++            const bool prevFrameValid = (p.prevFrame != nullptr) && p.curFrame->frameMap.workloads[w].mapped;
+             Workload &workload = p.workloadQueue->workloads[w];
+             const DrawData &drawData = workload.drawData;
+             DrawBuffers &drawBuffers = workload.drawBuffers;
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -122,7 +122,7 @@
+     }
+ 
+     void WorkloadQueue::threadConfigurationUpdate(hlslpp::uint2 viFbSize, WorkloadConfiguration &workloadConfig) {
+-        const std::scoped_lock lock(ext.sharedResources->configurationMutex);
++        std::unique_lock<std::mutex> lock(ext.sharedResources->configurationMutex);
+         const bool sizeChanged = ext.sharedResources->swapChainSizeChanged;
+         ext.sharedResources->swapChainSizeChanged = false;
+         
+@@ -258,6 +258,7 @@
+         workloadConfig.postBlendNoiseNegative = ext.sharedResources->emulatorConfig.dither.postBlendNoiseNegative;
+         
+         if (ext.sharedResources->fbConfigChanged || sizeChanged) {
++            if (usesGloverSplitFrames()) lock.unlock();
+             {
+                 // Wait until the other queue has stopped using the interpolated color targets.
+                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+@@ -267,6 +268,7 @@
+                 });
+             }
+ 
++            if (!lock.owns_lock()) lock.lock();
+             std::scoped_lock<std::mutex> managerLock(ext.sharedResources->managerMutex);
+             FramebufferManager &fbManager = ext.sharedResources->framebufferManager;
+             RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;

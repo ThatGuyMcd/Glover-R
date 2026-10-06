@@ -1,0 +1,16 @@
+{
+  "scanner_report": {
+    "source_archive": "Glover-R-native-diagnostics-20260930-145503-898631.zip",
+    "archive_sha256": "80f55e2e8f4d44e87a4b2acbd7915e6ea8fda617b5c5bd4ab8510af53246c698",
+    "member": "build/reports/native-sdk-symbols.txt",
+    "sha256": "82a0abcfa32b808e0caffe241c4100028b3cae9507685c62dcf57ca0d66553d1",
+    "description": "Actual user's scanner output; metadata only, no ROM instructions or assets."
+  },
+  "runtime_names": {
+    "source": "https://github.com/N64Recomp/N64Recomp/blob/81213c1831fab2521a6a5459c67b63437d67e253/src/symbol_lists.cpp",
+    "upstream_blob_sha": "9c8f27d1aac03aca863972bc676baf71907237a8",
+    "description": "Test-only transcription of names from reimplemented_funcs and ignored_funcs. NOT a dependency checkout or a recompiler binary.",
+    "reimplemented_count": 116,
+    "ignored_count": 358
+  }
+}

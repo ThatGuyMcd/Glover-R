@@ -1,0 +1,246 @@
+--- a/src/common/rt64_glover_configuration.h
++++ b/src/common/rt64_glover_configuration.h
+@@ -4,6 +4,8 @@
+ #include <algorithm>
+ #include <cstdint>
+ #include <cstring>
++#include <cmath>
++#include <array>
+ #include <limits>
+ #include <vector>
+ namespace RT64 {
+@@ -46,6 +48,37 @@
+         std::memcpy(owned.data(), source, owned.size());
+         return true;
+     }
++    // Motion belongs to the decoded draw, never to a live guest pointer.
++    struct GloverRectMotion {
++        uint64_t identity = 0;
++        bool sky = false;
++        int32_t wrapWidth = 0;
++        std::array<int32_t, 4> rect{};
++        std::array<int32_t, 4> previous{};
++        bool matched = false;
++    };
++    inline bool matchGloverRectMotion(GloverRectMotion &cur, const GloverRectMotion &prev) {
++        cur.matched = false;
++        if (!cur.identity || cur.identity != prev.identity || cur.sky != prev.sky) return false;
++        const int cw = cur.rect[2] - cur.rect[0], ch = cur.rect[3] - cur.rect[1];
++        const int pw = prev.rect[2] - prev.rect[0], ph = prev.rect[3] - prev.rect[1];
++        if (cw <= 0 || ch <= 0 || pw <= 0 || ph <= 0) return false;
++        cur.previous = prev.rect;
++        if (cur.sky) {
++            if (cur.wrapWidth <= 0 || cur.wrapWidth != prev.wrapWidth || cw != pw || ch != ph) return false;
++            // Adjacent copies exchange places at the wrap. Follow the nearest
++            // periodic image instead of lerping across the whole sky texture.
++            const int offset = int(std::round(double(cur.rect[0] - prev.rect[0]) / cur.wrapWidth)) * cur.wrapWidth;
++            cur.previous[0] += offset;
++            cur.previous[2] += offset;
++            if (std::abs(cur.rect[0] - cur.previous[0]) > cur.wrapWidth / 4 ||
++                std::abs(cur.rect[1] - cur.previous[1]) > 240) return false;
++        }
++        else if (std::abs(cur.rect[0] - prev.rect[0]) > 640 || std::abs(cur.rect[1] - prev.rect[1]) > 480 ||
++            cw > pw * 2 || pw > cw * 2 || ch > ph * 2 || ph > ch * 2) return false;
++        cur.matched = true;
++        return true;
++    }
+     inline void setGloverSplitFrames(bool enabled) { gloverSplitFrames.store(enabled); }
+     inline bool usesGloverSplitFrames() { return gloverSplitFrames.load(); }
+ }
+--- a/src/hle/rt64_draw_call.h
++++ b/src/hle/rt64_draw_call.h
+@@ -9,6 +9,7 @@
+ #include <vector>
+ 
+ #include "common/rt64_load_types.h"
++#include "common/rt64_glover_configuration.h"
+ #include "shared/rt64_color_combiner.h"
+ #include "shared/rt64_extra_params.h"
+ #include "shared/rt64_rdp_params.h"
+@@ -97,6 +98,7 @@
+         uint8_t textureLevels;
+         bool NoN;
+         bool gloverScreenCover = false;
++        GloverRectMotion gloverRectMotion;
+         bool rocketSkyBackground = false;
+         float rocketSkyCurrentRow = 0;
+         float rocketSkyPreviousRow = 0;
+--- a/src/hle/rt64_rdp.h
++++ b/src/hle/rt64_rdp.h
+@@ -137,6 +137,7 @@
+         std::vector<interop::float4> triColWorkBuffer;
+         std::vector<interop::float2> triTcWorkBuffer;
+         bool gloverScreenCover = false;
++        GloverRectMotion gloverRectMotion;
+         bool crashed;
+         CrashReason crashReason;
+         std::vector<FramebufferManager::RegionIterator> regionIterators;
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -136,6 +136,7 @@
+         drawCall.shadingSmoothMask = 0;
+         drawCall.NoN = false;
+         drawCall.gloverScreenCover = false;
++        drawCall.gloverRectMotion = {};
+         drawCall.rocketSkyBackground = false;
+         drawCall.extendedType = DrawExtendedType::None;
+         drawCall.extendedFlags = {};
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -1237,6 +1237,8 @@
+         drawCall.rectRightOrigin = extAlignment.rightOrigin;
+         drawCall.rectAspect = extended.global.rectAspect;
+         drawCall.gloverScreenCover = gloverScreenCover;
++        drawCall.gloverRectMotion = gloverRectMotion;
++        drawCall.gloverRectMotion.rect = {drawRect.ulx, drawRect.uly, drawRect.lrx, drawRect.lry};
+ 
+         if (flushedState) {
+             state->loadDrawState();
+--- a/src/gbi/rt64_gbi_rdp.cpp
++++ b/src/gbi/rt64_gbi_rdp.cpp
+@@ -132,6 +132,11 @@
+             const uint16_t z = (*dl)->p1(16, 16);
+             const uint16_t dz = (*dl)->p1(0, 16);
+             state->rdp->setPrimDepth(z, dz);
++            state->rdp->gloverRectMotion = {};
++            // Checked host world-sprite call sites tag only the unused w0 bits.
++            // Depth remains entirely in w1, as on the original RDP.
++            if (usesGloverSplitFrames() && ((*dl)->w0 & 0x00800000U))
++                state->rdp->gloverRectMotion.identity = 0x1000000000000000ULL | ((*dl)->w0 & 0x007FFFFFU);
+         }
+         
+         void setScissor(State *state, DisplayList **dl) {
+@@ -195,6 +200,7 @@
+             const int16_t dsdx = (*dl)->p1(16, 16);
+             const int16_t dtdy = (*dl)->p1(0, 16);
+             state->rdp->drawTexRect(ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, false);
++            state->rdp->gloverRectMotion = {};
+             if (sky) {
+                 state->flush();
+                 state->rocketBackgroundPresentationActive = false;
+@@ -219,6 +225,7 @@
+             const int16_t dtdy = (*dl)->p1(0, 16);
+             
+             state->rdp->drawTexRect(ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, true);
++            state->rdp->gloverRectMotion = {};
+         }
+ 
+         // TODO replace the normal rect commands with these and pass a temporary RDP buffer when rdphalf_2 is run in the RSP
+@@ -234,6 +241,7 @@
+             const int16_t dsdx = (*dl)[1].p1(16, 16);
+             const int16_t dtdy = (*dl)[1].p1(0, 16);
+             state->rdp->drawTexRect(ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, false);
++            state->rdp->gloverRectMotion = {};
+         }
+ 
+         void texrectFlipLLE(State* state, DisplayList** dl) {
+@@ -248,6 +256,7 @@
+             const int16_t dsdx = (*dl)[1].p1(16, 16);
+             const int16_t dtdy = (*dl)[1].p1(0, 16);
+             state->rdp->drawTexRect(ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, true);
++            state->rdp->gloverRectMotion = {};
+         }
+ 
+         void fillRect(State *state, DisplayList **dl) {
+--- a/src/gbi/rt64_gbi_f3d.cpp
++++ b/src/gbi/rt64_gbi_f3d.cpp
+@@ -241,11 +241,22 @@
+                     const uint32_t top = flipY ? sprite.height - row - rows : row;
+                     const int16_t s = (firstPixel + (flipX ? sprite.width - 1 : 0)) << 5;
+                     const int16_t t = flipY ? (rows - 1) << 5 : 0;
++                    rdp.gloverRectMotion = {};
++                    // The verified scrolling sky image is 640x132. Keep UI,
++                    // screen-cover artwork and every smaller sprite authored.
++                    if (background && sprite.width == 640 && sprite.height == 132 &&
++                        !rdp.gloverScreenCover && scissor.ulx == 0 && scissor.uly == 0) {
++                        rdp.gloverRectMotion.identity = 0x2000000000000000ULL |
++                            (uint64_t(image) << 20) | (uint64_t(sprite.y + row) << 4) | uint64_t(flipX | (flipY << 1));
++                        rdp.gloverRectMotion.sky = true;
++                        rdp.gloverRectMotion.wrapWidth = int32_t(sprite.width) * 4096 / scaleX;
++                    }
+                     rdp.drawTexRect(frameX, frameY + top * 4096 / scaleY,
+                         frameX + sprite.width * 4096 / scaleX, frameY + (top + rows) * 4096 / scaleY,
+                         G_TX_RENDERTILE, s, t, flipX ? -int32_t(scaleX) : scaleX,
+                         flipY ? -int32_t(scaleY) : scaleY, false);
+                 }
++                rdp.gloverRectMotion = {};
+                 state->endSpriteCommand();
+                 rdp.gloverScreenCover = savedCover;
+                 if (background) rdp.setRectAspect(savedAspect);
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -12,6 +12,46 @@
+ #include "xxHash/xxh3.h"
+ 
+ namespace RT64 {
++    // Only semantic world sprites and scrolling sky opt into rectangle motion.
++    static void matchGloverRectangles(Workload &cur, const Workload &prev) {
++        std::unordered_map<uint64_t, std::vector<const GameCall *>> history;
++        std::unordered_map<uint64_t, unsigned> owners;
++        auto visit = [](auto &work, auto callback) {
++            for (uint32_t f = 0; f < work.fbPairCount; ++f)
++                for (uint32_t p = 0; p < work.fbPairs[f].projectionCount; ++p) {
++                    auto &proj = work.fbPairs[f].projections[p];
++                    if (proj.type != Projection::Type::Rectangle) continue;
++                    for (uint32_t c = 0; c < proj.gameCallCount; ++c) callback(proj.gameCalls[c]);
++                }
++        };
++        visit(prev, [&](const GameCall &call) {
++            if (call.callDesc.gloverRectMotion.identity) history[call.callDesc.gloverRectMotion.identity].push_back(&call);
++        });
++        visit(cur, [&](GameCall &call) {
++            auto &motion = call.callDesc.gloverRectMotion;
++            motion.matched = false;
++            if (motion.identity) ++owners[motion.identity];
++        });
++        visit(cur, [&](GameCall &call) {
++            auto &motion = call.callDesc.gloverRectMotion;
++            if (!motion.identity) return;
++            const auto found = history.find(motion.identity);
++            if (found == history.end()) return;
++            if (!motion.sky && (owners[motion.identity] != 1 || found->second.size() != 1)) return;
++            for (const auto *old : found->second) {
++                const auto &a = call.callDesc, &b = old->callDesc;
++                if (a.rectAspect != b.rectAspect || a.rectLeftOrigin != b.rectLeftOrigin || a.rectRightOrigin != b.rectRightOrigin ||
++                    a.tileCount != b.tileCount || a.tileCount == 0 || a.otherMode.H != b.otherMode.H || a.otherMode.L != b.otherMode.L ||
++                    a.colorCombiner.H != b.colorCombiner.H || a.colorCombiner.L != b.colorCombiner.L ||
++                    (a.rectDsdx < 0) != (b.rectDsdx < 0) || (a.rectDtdy < 0) != (b.rectDtdy < 0)) continue;
++                bool sameMaterial = true;
++                for (uint32_t t = 0; t < a.tileCount; ++t)
++                    sameMaterial &= cur.drawData.callTiles[a.tileIndex + t].tmemHashOrID == prev.drawData.callTiles[b.tileIndex + t].tmemHashOrID;
++                if (sameMaterial && matchGloverRectMotion(motion, b.gloverRectMotion)) break;
++            }
++        });
++    }
++
+     // GameFrame
+     
+     bool GameFrame::areFramebufferPairsCompatible(const WorkloadQueue &workloadQueue, const GameIndices::FramebufferPair &first, const GameIndices::FramebufferPair &second) {
+@@ -297,6 +337,7 @@
+             workloadMap.prevLookAtMapped.clear();
+             workloadMap.prevLookAtMapped.resize(prevWorkload.drawData.rspLookAt.size());
+ 
++            if (usesGloverSplitFrames()) matchGloverRectangles(curWorkload, prevWorkload);
+             buildTransformIdMap(curWorkload, curWorkload.transformIdMap, curWorkload.transformIgnoredIds);
+ 
+             // Retrieve the matching maps for the current and previous workload.
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1700,6 +1700,17 @@
+                                         isGloverScreenImage(call.callDesc.rect.lrx, call.callDesc.rect.lry,
+                                             int(p.fbWidth) * 4, int(p.fbHeight) * 4)));
+                             RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                            if (usesGloverSplitFrames() && call.callDesc.gloverRectMotion.matched && !screenImage) {
++                                const auto &m = call.callDesc.gloverRectMotion;
++                                const FixedRect previous(m.previous[0], m.previous[1], m.previous[2], m.previous[3]);
++                                const auto old = convertViewportRect(previous, p.resolutionScale, p.fbWidth, invRatioScale,
++                                    extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                                const float weight = std::clamp(rocketPresentationWeight, 0.0f, 1.0f);
++                                viewportRect.x = old.x + (viewportRect.x - old.x) * weight;
++                                viewportRect.y = old.y + (viewportRect.y - old.y) * weight;
++                                viewportRect.width = old.width + (viewportRect.width - old.width) * weight;
++                                viewportRect.height = old.height + (viewportRect.height - old.height) * weight;
++                            }
+                             if (screenImage) {
+                                 const auto covered = gloverScreenCover(call.callDesc.rect.ulx * 0.25f, call.callDesc.rect.uly * 0.25f,
+                                     call.callDesc.rect.lrx * 0.25f, call.callDesc.rect.lry * 0.25f,

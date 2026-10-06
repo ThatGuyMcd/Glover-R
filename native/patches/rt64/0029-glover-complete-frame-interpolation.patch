@@ -1,0 +1,172 @@
+--- /dev/null
++++ b/src/common/rt64_glover_configuration.h
+@@ -0,0 +1,8 @@
++// Glover-specific presentation policy. Enabled by the maintained host adapter.
++#pragma once
++#include <atomic>
++namespace RT64 {
++    inline std::atomic<bool> gloverSplitFrames{false};
++    inline void setGloverSplitFrames(bool enabled) { gloverSplitFrames.store(enabled); }
++    inline bool usesGloverSplitFrames() { return gloverSplitFrames.load(); }
++}
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -14,6 +14,7 @@
+ 
+ #include "common/rt64_elapsed_timer.h"
+ #include "common/rt64_math.h"
++#include "common/rt64_glover_configuration.h"
+ #include "common/rt64_tmem_hasher.h"
+ #include "preset/rt64_preset_draw_call.h"
+ #include "preset/rt64_preset_light.h"
+@@ -1795,7 +1796,7 @@
+         const bool presentEarly = !ext.presentQueue->viewRDRAM && (ext.enhancementConfig->presentation.mode == EnhancementConfiguration::Presentation::Mode::PresentEarly);
+         workload.earlyPresentApproved = false;
+         workload.earlyPresentColorAddress = 0;
+-        if (presentEarly && (workload.fbPairCount > 0)) {
++        if ((presentEarly || usesGloverSplitFrames()) && (workload.fbPairCount > 0)) {
+             thread_local std::unordered_set<uint32_t> approvalColorImageAddressSet;
+             approvalColorImageAddressSet.clear();
+ 
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -23,7 +23,7 @@
+ #   include "render/rt64_raytracing_shader_cache.h"
+ #endif
+ 
+-#define WORKLOAD_QUEUE_SIZE 4
++#define WORKLOAD_QUEUE_SIZE 32 // Retain complete current/previous multi-task frames.
+ 
+ namespace RT64 {
+     struct PresentQueue;
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -5,6 +5,7 @@
+ #include "rt64_workload_queue.h"
+ 
+ #include "common/rt64_thread.h"
++#include "common/rt64_glover_configuration.h"
+ 
+ #include "rt64_present_queue.h"
+ 
+@@ -886,6 +887,7 @@
+         Thread::setCurrentThreadName("RT64 Workload");
+ 
+         WorkloadConfiguration workloadConfig;
++        std::vector<uint32_t> pendingGloverWorkloads;
+         int64_t logicalTicks = 0;
+         int64_t displayTicks = 0;
+         uint32_t originalRateForTicks = 0;
+@@ -918,6 +920,21 @@
+                 workloadProfiler.start();
+                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
+ 
++                // Retail Glover ends each completed frame with a no-draw full-sync
++                // task. Keep the independently uploaded task snapshots alive and
++                // render all its passes together, including the background and HUD.
++                const bool splitFrame = usesGloverSplitFrames() && !workload.paused;
++                if (splitFrame) {
++                    pendingGloverWorkloads.push_back(uint32_t(processCursor));
++                    if ((workload.fbPairCount > 0) && (pendingGloverWorkloads.size() < 12)) {
++                        threadAdvanceWorkloadId(workload.workloadId);
++                        processCursor = -1;
++                        workloadProfiler.end();
++                        workloadProfiler.reset();
++                        continue;
++                    }
++                }
++
+                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
+                 if (!workload.paused || (!gameFrames[curFrameIndex].workloads.empty() && (gameFrames[curFrameIndex].workloads[0] != (uint32_t)processCursor))) {
+                     prevFrameIndex = curFrameIndex;
+@@ -928,7 +945,13 @@
+                 GameFrame &curFrame = gameFrames[curFrameIndex];
+                 const GameFrame &prevFrame = gameFrames[prevFrameIndex];
+                 uint32_t workloadIndex = processCursor;
+-                curFrame.set(*this, &workloadIndex, 1);
++                if (splitFrame) {
++                    curFrame.set(*this, pendingGloverWorkloads.data(), uint32_t(pendingGloverWorkloads.size()));
++                    pendingGloverWorkloads.clear();
++                }
++                else {
++                    curFrame.set(*this, &workloadIndex, 1);
++                }
+ 
+                 // Detect the color image to interpolate for this workload.
+                 RenderTargetKey interpolationTargetKey;
+@@ -940,8 +963,10 @@
+                     std::unordered_set<uint32_t> &colorSet = ext.sharedResources->colorImageAddressSet;
+                     colorVector.clear();
+                     colorSet.clear();
+-                    for (int32_t f = workload.fbPairCount - 1; f >= 0; f--) {
+-                        const FramebufferPair &fbPair = workload.fbPairs[f];
++                    for (auto wi = curFrame.workloads.rbegin(); wi != curFrame.workloads.rend(); ++wi) {
++                    const Workload &candidateWorkload = workloads[*wi];
++                    for (int32_t f = candidateWorkload.fbPairCount - 1; f >= 0; f--) {
++                        const FramebufferPair &fbPair = candidateWorkload.fbPairs[f];
+                         bool interpolationCandidate = fbPair.earlyPresentCandidate();
+                         if (fbPair.drawColorRect.isEmpty()) {
+                             continue;
+@@ -968,8 +993,8 @@
+                         // this workload before it entered the render queue. The
+                         // framebuffer flag describes a prior asynchronous
+                         // present and is not sufficient for alternating buffers.
+-                        const bool workloadApproved = workload.earlyPresentApproved &&
+-                            (workload.earlyPresentColorAddress == colorImg.address);
++                        const bool workloadApproved = candidateWorkload.earlyPresentApproved &&
++                            (candidateWorkload.earlyPresentColorAddress == colorImg.address);
+                         // SkipBuffering deliberately selects a freshly modified framebuffer
+                         // from VI history instead of the buffer currently being scanned out.
+                         const bool interpolationApproved = workloadApproved || ((interpolationFb != nullptr) && interpolationFb->interpolationEnabled);
+@@ -983,6 +1008,7 @@
+                             interpolationTargetKey.width = fbPair.colorImage.width;
+                             interpolationTargetFbPairIndex = f;
+                         }
++                    }
+                     }
+                 }
+ 
+@@ -1034,6 +1060,17 @@
+                     deltaTimeMs = 1.0f / float(workload.viOriginalRate);
+                 }
+ 
++                if (splitFrame) {
++                    static uint64_t groups = 0;
++                    if (++groups <= 6 || groups % 241 == 0) {
++                        unsigned mapped = 0;
++                        for (const auto &m : curFrame.frameMap.workloads) mapped += m.mapped;
++                        std::fprintf(stderr, "[glover][frames] group=%llu tasks=%zu source=%u target=%u generated=%u matched=%u fb=%08X\n",
++                            static_cast<unsigned long long>(groups), curFrame.workloads.size(),
++                            workload.viOriginalRate, workloadConfig.targetRate, displayFrames, mapped,
++                            interpolationTargetKey.address);
++                    }
++                }
+                 ext.sharedResources->viOriginalRate = workload.viOriginalRate;
+                 
+                 // Get the current and previous set of frame counters. The other set can be in use by the present queue. Skip if no new present event has arrived before this workload event.
+@@ -1148,7 +1185,7 @@
+                     if (generateInterpolatedFrames && (usingMSAA || (frame > 0))) {
+                         {
+                             std::scoped_lock<std::mutex> cursorLock(cursorMutex);
+-                            skipWorkloadNow = ((frame + 1) < displayFrames) && (writeCursor != threadCursor);
++                            skipWorkloadNow = !splitFrame && ((frame + 1) < displayFrames) && (writeCursor != threadCursor);
+                         }
+ 
+                         {
+@@ -1181,7 +1218,15 @@
+                 threadConfigurationValidate();
+ 
+                 if (!workload.paused) {
+-                    threadAdvanceBarrier();
++                    if (splitFrame) {
++                        std::scoped_lock<std::mutex> cursorLock(cursorMutex);
++                        // Retain this whole frame until the next frame has used
++                        // it for matching and finished every GPU submission.
++                        barrierCursor = int(curFrame.workloads.front());
++                    }
++                    else {
++                        threadAdvanceBarrier();
++                    }
+                 }
+ 
+                 processCursor = -1;

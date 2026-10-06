@@ -1,0 +1,41 @@
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -1239,6 +1239,8 @@
+         drawCall.gloverScreenCover = gloverScreenCover;
+         drawCall.gloverRectMotion = gloverRectMotion;
+         drawCall.gloverRectMotion.rect = {drawRect.ulx, drawRect.uly, drawRect.lrx, drawRect.lry};
++        if (drawCall.gloverRectMotion.identity && !drawCall.gloverRectMotion.sky)
++            drawCall.rectAspect = G_EX_ASPECT_ADJUST; // Same centred aspect correction as world projection.
+ 
+         if (flushedState) {
+             state->loadDrawState();
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -44,12 +44,26 @@
+                     a.tileCount != b.tileCount || a.tileCount == 0 || a.otherMode.H != b.otherMode.H || a.otherMode.L != b.otherMode.L ||
+                     a.colorCombiner.H != b.colorCombiner.H || a.colorCombiner.L != b.colorCombiner.L ||
+                     (a.rectDsdx < 0) != (b.rectDsdx < 0) || (a.rectDtdy < 0) != (b.rectDtdy < 0)) continue;
++                // An animated world sprite can change its image while keeping
++                // the same owner and motion. Use current texture pixels; only
++                // sky strip matching requires identical source content.
+                 bool sameMaterial = true;
+-                for (uint32_t t = 0; t < a.tileCount; ++t)
++                if (motion.sky) for (uint32_t t = 0; t < a.tileCount; ++t)
+                     sameMaterial &= cur.drawData.callTiles[a.tileIndex + t].tmemHashOrID == prev.drawData.callTiles[b.tileIndex + t].tmemHashOrID;
+                 if (sameMaterial && matchGloverRectMotion(motion, b.gloverRectMotion)) break;
+             }
+         });
++        unsigned skies = 0, worlds = 0, matchedSky = 0, matchedWorld = 0;
++        visit(cur, [&](const GameCall &call) {
++            const auto &m = call.callDesc.gloverRectMotion;
++            if (!m.identity) return;
++            if (m.sky) { ++skies; matchedSky += m.matched; }
++            else { ++worlds; matchedWorld += m.matched; }
++        });
++        static uint64_t samples = 0;
++        if ((skies || worlds) && ++samples % 301 == 1)
++            std::fprintf(stderr, "[glover][sprite-motion] sky=%u/%u world=%u/%u matched/total\n",
++                matchedSky, skies, matchedWorld, worlds);
+     }
+ 
+     // GameFrame

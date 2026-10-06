@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "rom_sha1": "270be17b3c8da9b88a7b99c2a545b0bce16837f4",
+  "groups": [
+    {
+      "name": "__osGetSR",
+      "handling": "upstream-ignored",
+      "size": 12,
+      "body_sha256": "2ea7fc1f266eee7e59be3d8ffee2aebda5c74a4e6765e268c725a9a6a9f50ddf",
+      "addresses": [
+        "0x8010D9B4",
+        "0x801C7320"
+      ],
+      "evidence": "2026-09-30 SDK report: full signature at 8010D9B4; osInitialize relocation at 801C7320. Both 12-byte bodies match in the validated USA ROM.",
+      "reason": "Preserve and validate both SDK scan addresses before native classification. Boot.6 gives each emitted original status-read body a unique native symbol; it does not change or stub either body."
+    }
+  ],
+  "source": "N64Recomp 81213c1831fab2521a6a5459c67b63437d67e253 src/elf.cpp classifies each symbol by name and indexes functions by VRAM; __osGetSR is in ignored_funcs, not reimplemented_funcs.",
+  "notes": [
+    "This is not general permission to accept duplicated names. Unknown copies, changed sizes, changed code, and changed runtime classification are rejected.",
+    "The scan-level classification remains upstream-ignored evidence. The separate ROM-checked CPU classification rescues both original status-read bodies for live native callers."
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "rocket_base": {
+    "repository": "https://github.com/ThatGuyMcd/Rocket-R.git",
+    "commit": "133070e264350f17257a520ae0de4da98ce445b0",
+    "destination": "build/upstream/rocket-r",
+    "critical_blobs": {
+      "scripts/OneClickBuild.ps1": "58531fa7cb610e54a21112494e497cc36c534762",
+      "ONE-CLICK-BUILD.cmd": "b21fd168aa53a5f78bebd81fee068147325fbfac",
+      "CMakeLists.txt": "46b8e5b48f88eee88b9bac97a9d42d17608d6b06",
+      "dependencies.lock.json": "a7df95ac1bb04a22b77b7281c40a1644d23bab97",
+      "patches/manifest.json": "01b2371534d243ae3c1b48d29dfba3adfb719866"
+    },
+    "use": "Pinned source baseline. Not invoked as Glover and not renamed blindly."
+  },
+  "glover_decomp": {
+    "repository": "https://github.com/Rainchus/Glover.git",
+    "commit": "f2d2b2824e29a5d9b00718a283a3cb243be3ca52",
+    "destination": "build/upstream/glover-decomp",
+    "critical_blobs": {
+      "glover.yaml": "e89fcc14e2ffb8bba6b58124af96c7c9ef1b4033",
+      "Makefile": "7524b317ebde7eddfb59a4fcf52e03417bcc0078"
+    },
+    "use": "Initial USA section-layout reference; not a claim of complete function metadata."
+  },
+  "runtime_family": [
+    {
+      "name": "N64ModernRuntime",
+      "commit": "ae1ffbb909d9f93c88c41830deb539f7feef5ed2"
+    },
+    {
+      "name": "N64Recomp",
+      "commit": "81213c1831fab2521a6a5459c67b63437d67e253"
+    },
+    {
+      "name": "RT64",
+      "commit": "6f1c2d99a4ea571c139f449c326fd176ba8f3496"
+    },
+    {
+      "name": "SDL2",
+      "commit": "adf31f6ec0be0f9ba562889398f71172c7941023"
+    }
+  ],
+  "symbol_scanner": {
+    "repository": "https://github.com/shygoo/n64sym.git",
+    "commit": "ccf4600f3389f1a84bde23339225cf372fdf7712",
+    "critical_blobs": {
+      "src/n64sym.cpp": "6e57180bf74cfd97cd28d281e6c88ce729280aa2"
+    },
+    "use": "Native build-time SDK signature/relocation evidence; not executed during local package preparation."
+  }
+}

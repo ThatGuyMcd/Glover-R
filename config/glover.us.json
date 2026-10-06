@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "game": "Glover",
+  "project": "Glover-R",
+  "game_code": "NGVE",
+  "revision": 0,
+  "size": 8388608,
+  "sha1": "270be17b3c8da9b88a7b99c2a545b0bce16837f4",
+  "sha256": "363c84be17c7c11e97df6069ee8f3b205cb190f60e0c02ca223892ff7f47367a",
+  "load_rom_offset": 4096,
+  "load_vram": 2148532224,
+  "callable_entrypoint": 2148769256,
+  "initial_stack": 2149970264,
+  "bss_start": 2149537408,
+  "bss_end": 2150305040,
+  "sections": [
+    {
+      "name": ".entry",
+      "start": 4096,
+      "end": 4160,
+      "kind": "code"
+    },
+    {
+      "name": ".data",
+      "start": 4160,
+      "end": 55584,
+      "kind": "data"
+    },
+    {
+      "name": ".text.0",
+      "start": 55584,
+      "end": 120608,
+      "kind": "code"
+    },
+    {
+      "name": ".rsp.boot",
+      "start": 120608,
+      "end": 120816,
+      "kind": "rodata"
+    },
+    {
+      "name": ".text.1",
+      "start": 120816,
+      "end": 775952,
+      "kind": "code"
+    },
+    {
+      "name": ".rsp.gfx0",
+      "start": 775952,
+      "end": 781120,
+      "kind": "rodata"
+    },
+    {
+      "name": ".rsp.gfx1",
+      "start": 781120,
+      "end": 784864,
+      "kind": "rodata"
+    },
+    {
+      "name": ".rsp.audio",
+      "start": 784864,
+      "end": 788480,
+      "kind": "rodata"
+    },
+    {
+      "name": ".text.2",
+      "start": 788480,
+      "end": 872908,
+      "kind": "code"
+    },
+    {
+      "name": ".rodata",
+      "start": 872908,
+      "end": 1009280,
+      "kind": "rodata"
+    }
+  ],
+  "layout_source": "Rainchus/Glover f2d2b2824e29a5d9b00718a283a3cb243be3ca52 glover.yaml, with ROM-verified final CPU epilogue through 0xD51CC",
+  "function_metadata_status": "candidates-require-review",
+  "save_type": null,
+  "audio_microcode": null,
+  "notes": [
+    "The layout is an initial map, not proof that all executable code has been identified.",
+    "The callable entrypoint, stack and BSS are decoded and checked against the ROM bootstrap.",
+    "The remaining ROM tail is preserved in the private ROM, not classified as non-executable by assumption.",
+    "Do not substitute Rocket's entrypoint, EEPROM choice, audio microcode or guest hooks.",
+    "Embedded RSP ranges are split out using task-pointer construction and adjacent CPU entry evidence. Microcode execution remains unverified."
+  ]
+}

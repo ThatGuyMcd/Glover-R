@@ -1,0 +1,70 @@
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -5,6 +5,7 @@
+ #include "rt64_present_queue.h"
+ 
+ #include "common/rt64_thread.h"
++#include "common/rt64_glover_configuration.h"
+ #include "rhi/rt64_render_hooks.h"
+ 
+ #include "rt64_workload_queue.h"
+@@ -393,9 +394,16 @@
+             }
+ 
+             if (presentFrame && swapChainValid) {
+-                // Wait until the approximate time the next present should be at the current intended rate.
++                // Keep Glover on a fixed presentation timeline. Starting the next
++                // interval after every swap-chain wait accumulates its overhead.
++                const bool gloverPaced = usesGloverSplitFrames() && targetRate > viOriginalRate;
++                Timestamp scheduledTimestamp = Timer::current();
+                 if ((presentTimestamp != Timestamp()) && (targetRate > 0) && (targetRate > viOriginalRate)) {
+-                    Timer::preciseSleepUntil(presentTimestamp + std::chrono::nanoseconds(1'000'000'000 / targetRate));
++                    const auto period = std::chrono::nanoseconds(1'000'000'000 / targetRate);
++                    scheduledTimestamp = gloverPaced
++                        ? gloverNextPresentDeadline(scheduledTimestamp, presentTimestamp, period)
++                        : presentTimestamp + period;
++                    Timer::preciseSleepUntil(scheduledTimestamp);
+                 }
+ 
+                 if (presentWaitEnabled) {
+@@ -403,7 +411,7 @@
+                 }
+ 
+                 RenderCommandSemaphore *waitSemaphore = drawSemaphores[swapChainIndex].get();
+-                presentTimestamp = Timer::current();
++                presentTimestamp = gloverPaced ? scheduledTimestamp : Timer::current();
+                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
+                 presentProfiler.logAndRestart();
+                 if (swapChainValid) {
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -1046,7 +1046,7 @@
+                     displayFrames = uint32_t((logicalTicks - displayTicks) / workload.viOriginalRate);
+                     deltaTimeMs = 1.0f / float(workloadConfig.targetRate);
+ 
+-                    if ((displayFrames > 1) && frameReduction) {
++                    if (!splitFrame && (displayFrames > 1) && frameReduction) {
+                         displayTicks += workload.viOriginalRate;
+                         displayFrames--;
+                         frameReduction = false;
+@@ -1123,7 +1123,10 @@
+                         const int64_t currentTimeMicro = workloadTimer.elapsedMicroseconds() - setupTimeMicro;
+                         const int64_t expectedTimeMicro = frame * maxTimePerFrameMicro;
+                         const int64_t measuredFrameMicro = renderTimeTotalMicro / framesRendered;
+-                        if ((currentTimeMicro > expectedTimeMicro) || ((currentTimeMicro + measuredFrameMicro) > adjustedTimeWindowMicro)) {
++                        // A split frame may wait for a target still being shown.
++                        // A late subframe alone is not a reason to drop the next one.
++                        if ((!splitFrame && (currentTimeMicro > expectedTimeMicro)) ||
++                            ((currentTimeMicro + measuredFrameMicro) > adjustedTimeWindowMicro)) {
+                             displayTicks += workload.viOriginalRate;
+                             skippedFrames = true;
+                             continue;
+@@ -1146,7 +1149,7 @@
+                                 // Wait until the target has finished presenting if the alternate frame counter (used by the present queue) is making use of this target.
+                                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+-                                    frameReduction = frameReduction || (prevFrameCounters.presented <= targetIndex);
++                                    frameReduction = !splitFrame && (frameReduction || (prevFrameCounters.presented <= targetIndex));
+                                     return prevFrameCounters.presented > targetIndex;
+                                 });
+                             }

@@ -1,0 +1,198 @@
+--- /dev/null
++++ b/src/common/rt64_glover_frame_profile.h
+@@ -0,0 +1,43 @@
++// Opt-in bounded frame pacing diagnostics; no GPU readbacks or guest writes.
++#pragma once
++#include <chrono>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <cstdint>
++#include <string>
++namespace RT64 {
++    inline int64_t gloverProfileNow() {
++        return std::chrono::duration_cast<std::chrono::microseconds>(
++            std::chrono::steady_clock::now().time_since_epoch()).count();
++    }
++    struct GloverFrameProfile {
++        std::FILE *file = nullptr;
++        int64_t started = 0;
++        int64_t duration = 0;
++        unsigned rows = 0;
++        explicit GloverFrameProfile(const char *name, const char *columns) {
++            const char *directory = std::getenv("GLOVER_FRAME_PROFILE");
++            if (!directory || !*directory) return;
++            const char *seconds = std::getenv("GLOVER_FRAME_PROFILE_SECONDS");
++            duration = 1000000LL * (seconds ? std::max(1, std::min(300, std::atoi(seconds))) : 90);
++            file = std::fopen((std::string(directory) + "/" + name + ".csv").c_str(), "wb");
++            if (file) {
++                std::fprintf(file, "%s\n", columns);
++                started = gloverProfileNow();
++            }
++        }
++        bool active() {
++            if (file && gloverProfileNow() - started > duration) {
++                std::fclose(file); file = nullptr;
++            }
++            return file != nullptr;
++        }
++        template<class... Args> void row(const char *format, Args... args) {
++            if (!active()) return;
++            std::fprintf(file,format,args...);
++            if (++rows % 128 == 0) std::fflush(file);
++        }
++        ~GloverFrameProfile() { if (file) std::fclose(file); }
++    };
++}
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -9,6 +9,7 @@
+ 
+ #include "common/rt64_thread.h"
+ #include "common/rt64_glover_configuration.h"
++#include "common/rt64_glover_frame_profile.h"
+ #include "rhi/rt64_render_hooks.h"
+ 
+ #include "rt64_workload_queue.h"
+@@ -118,6 +119,8 @@
+             targetRate = ext.sharedResources->targetRate;
+         }
+ 
++        thread_local GloverFrameProfile profile("present", "time_us,present,workload,index,count,target,source,entry_lock_us,interp_wait_us,acquire_us,draw_wait_us,pace_us,swap_wait_us,present_us,deadline_late_us,valid");
++        const int64_t entryStart = profile.active() ? gloverProfileNow() : 0;
+         RenderTarget *colorTarget = nullptr;
+         int32_t framesToPresent = 1;
+         bool lockedWorkloadMutex = false;
+@@ -130,6 +133,7 @@
+             ext.sharedResources->workloadMutex.lock();
+             lockedWorkloadMutex = true;
+         }
++        const int64_t entryLockMicro = entryStart ? gloverProfileNow() - entryStart : 0;
+         InterpolatedFrameCounters &frameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
+ 
+         // TODO: There's a possible race condition interactions that can happen while the workload
+@@ -286,6 +290,9 @@
+         }
+         
+         for (int32_t i = 0; i < framesToPresent; i++) {
++            const bool profiled = profile.active();
++            const int64_t frameStart = profiled ? gloverProfileNow() : 0;
++            int64_t interpEnd = 0, acquireEnd = 0, drawEnd = 0, paceStart = 0, paceEnd = 0, swapEnd = 0;
+             uint32_t frameCountersNextPresented = 0;
+             if ((framesToPresent > 1) && (usingMSAA || (i > 0))) {
+                 // Stall until the interpolated color target is available.
+@@ -339,12 +346,14 @@
+                     }
+                 }
+             }
++            if (profiled) interpEnd = gloverProfileNow();
+             uint32_t swapChainIndex = 0;
+             const bool presentFrame = (i < framesToPresent) && swapChainValid;
+             if (presentFrame) {
+                 swapChainValid = ext.swapChain->acquireTexture(acquiredSemaphore.get(), &swapChainIndex);
+             }
+ 
++            if (profiled) acquireEnd = gloverProfileNow();
+             if (presentFrame && swapChainValid) {
+                 // Draw the framebuffer with the VI renderer.
+                 RenderTexture *swapChainTexture = ext.swapChain->getTexture(swapChainIndex);
+@@ -411,6 +420,7 @@
+                 }
+             }
+ 
++            if (profiled) drawEnd = gloverProfileNow();
+             if (lockedWorkloadMutex) {
+                 ext.sharedResources->workloadMutex.unlock();
+                 lockedWorkloadMutex = false;
+@@ -431,6 +441,7 @@
+             }
+ 
+             if (presentFrame && swapChainValid) {
++                if (profiled) paceStart = gloverProfileNow();
+                 // Keep Glover on a fixed presentation timeline. Starting the next
+                 // interval after every swap-chain wait accumulates its overhead.
+                 const bool gloverPaced = usesGloverSplitFrames() && targetRate > viOriginalRate;
+@@ -443,13 +454,25 @@
+                     Timer::preciseSleepUntil(scheduledTimestamp);
+                 }
+ 
++                if (profiled) paceEnd = gloverProfileNow();
+                 if (presentWaitEnabled) {
+                     ext.swapChain->wait();
+                 }
++                if (profiled) swapEnd = gloverProfileNow();
+ 
+                 RenderCommandSemaphore *waitSemaphore = drawSemaphores[swapChainIndex].get();
+                 presentTimestamp = gloverPaced ? scheduledTimestamp : Timer::current();
+                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
++                if (profiled) {
++                    const auto end = gloverProfileNow();
++                    profile.row("%lld,%llu,%llu,%d,%d,%u,%u,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%u\n",
++                        (long long)end, (unsigned long long)present.presentId,
++                        (unsigned long long)present.workloadId, i, framesToPresent, targetRate, viOriginalRate,
++                        (long long)(i == 0 ? entryLockMicro : 0), (long long)(interpEnd-frameStart),
++                        (long long)(acquireEnd-interpEnd), (long long)(drawEnd-acquireEnd),
++                        (long long)(paceEnd-paceStart), (long long)(swapEnd-paceEnd), (long long)(end-swapEnd),
++                        (long long)Timer::deltaMicroseconds(scheduledTimestamp,Timer::current()), unsigned(swapChainValid));
++                }
+                 presentProfiler.logAndRestart();
+                 if (swapChainValid) {
+                     ext.sharedResources->totalPresentations.fetch_add(1, std::memory_order_relaxed);
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "common/rt64_thread.h"
+ #include "common/rt64_glover_configuration.h"
++#include "common/rt64_glover_frame_profile.h"
+ 
+ #include "rt64_present_queue.h"
+ #include <cstdlib>
+@@ -982,6 +983,7 @@
+                     continue;
+                 }
+ 
++                thread_local GloverFrameProfile profile("workload", "time_us,workload,present,source,target,tasks,vertices,planned,rendered,skipped,setup_us,render_us,reuse_wait_us,group_us,budget_us,color");
+                 ElapsedTimer workloadTimer;
+                 workloadProfiler.start();
+                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
+@@ -1187,6 +1189,7 @@
+                 uint32_t targetIndex = 0;
+                 uint32_t framesRendered = 0;
+                 int64_t renderTimeTotalMicro = 0;
++                int64_t reuseWaitMicro = 0;
+                 for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow; frame++) {
+                     // Evaluate if this frame should be skipped. Measure the current time and compare it to what frame is estimated should be have been rendered by now.
+                     if ((frame > 0) && (originalTimeMicro > 0)) {
+@@ -1216,12 +1219,14 @@
+                             overrideModifier = (targetIndex + 1);
+ 
+                             if (useDifferentCounters && (prevFrameCounters.available > 0) && (targetIndex < prevFrameCounters.available)) {
++                                const auto reuseStart = profile.active() ? gloverProfileNow() : 0;
+                                 // Wait until the target has finished presenting if the alternate frame counter (used by the present queue) is making use of this target.
+                                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+                                     frameReduction = !splitFrame && (frameReduction || (prevFrameCounters.presented <= targetIndex));
+                                     return prevFrameCounters.presented > targetIndex;
+                                 });
++                                if (reuseStart) reuseWaitMicro += gloverProfileNow() - reuseStart;
+                             }
+ 
+                             targetIndex++;
+@@ -1288,6 +1293,16 @@
+                     ext.sharedResources->interpolatedCondition.notify_all();
+                 }
+ 
++                if (profile.active()) {
++                    unsigned vertices = 0;
++                    for (auto w : curFrame.workloads) vertices += workloads[w].drawData.vertexCount();
++                    profile.row("%lld,%llu,%llu,%u,%u,%zu,%u,%u,%u,%u,%lld,%lld,%lld,%lld,%lld,%u\n",
++                        (long long)gloverProfileNow(), (unsigned long long)workload.workloadId,
++                        (unsigned long long)workload.presentId, workload.viOriginalRate,workloadConfig.targetRate,
++                        curFrame.workloads.size(),vertices,displayFrames,framesRendered,unsigned(skippedFrames),
++                        (long long)setupTimeMicro,(long long)renderTimeTotalMicro,(long long)reuseWaitMicro,
++                        (long long)workloadTimer.elapsedMicroseconds(),(long long)adjustedTimeWindowMicro,interpolationTargetKey.address);
++                }
+                 threadConfigurationValidate();
+ 
+                 if (!workload.paused) {

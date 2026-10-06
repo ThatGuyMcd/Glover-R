@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Verify maintained native workspace inputs without rewriting any files."""
+from __future__ import annotations
+import argparse
+import hashlib
+import json
+from pathlib import Path, PurePosixPath
+
+
+def verify(root: Path) -> dict:
+    root=root.resolve()
+    record=json.loads((root/'GLOVER-NATIVE-SOURCE.json').read_text(encoding='utf-8'))
+    if record.get('schema_version')!=1 or record.get('source_adapter')!='GLOVER-BOOT-1':
+        raise ValueError('Unsupported native source ownership record.')
+    if record.get('base_commit')!='133070e264350f17257a520ae0de4da98ce445b0':
+        raise ValueError('Native source has the wrong Rocket-R baseline.')
+    for name,digest in record['files'].items():
+        rel=PurePosixPath(name)
+        if rel.is_absolute() or '..' in rel.parts or '\\' in name or ':' in name:
+            raise ValueError('Unsafe native source manifest path.')
+        path=root.joinpath(*rel.parts)
+        if path.is_symlink() or not path.resolve().is_relative_to(root):
+            raise ValueError('Native source escapes its workspace: '+name)
+        if not path.is_file(): raise ValueError('Missing native source: '+name)
+        data=path.read_bytes()
+        if hashlib.sha256(data).hexdigest()!=digest:
+            raise ValueError('Native source changed: '+name+'. Change the maintained outer source and reassemble.')
+    return {'source_files':len(record['files']),'status':'PASS','game_boot_verified':False}
+
+
+def main() -> int:
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True)
+    args=p.parse_args();print(json.dumps(verify(args.root),indent=2));return 0
+if __name__=='__main__':
+    try: raise SystemExit(main())
+    except (OSError,ValueError,KeyError) as e: print('NATIVE SOURCE CHECK FAILED: '+str(e));raise SystemExit(1)

@@ -1,0 +1,16 @@
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -286,8 +286,11 @@
+         case UserConfiguration::RefreshRate::Manual:
+             workloadConfig.targetRate = ext.sharedResources->userConfig.refreshRateTarget;
+ 
+-            // Limit the target rate to the rate detected by the swap chain.
+-            if ((ext.sharedResources->swapChainRate > 0) && (workloadConfig.targetRate > ext.sharedResources->swapChainRate)) {
++            // Glover's host adapter already resolves Match Display through SDL
++            // and supplies the user's explicit Manual target. A provisional or
++            // stale swap-chain rate must not silently cap that request, including
++            // when VSync is disabled. Preserve the inherited policy for other games.
++            if (!usesGloverSplitFrames() && (ext.sharedResources->swapChainRate > 0) && (workloadConfig.targetRate > ext.sharedResources->swapChainRate)) {
+                 workloadConfig.targetRate = ext.sharedResources->swapChainRate;
+             }
+ 

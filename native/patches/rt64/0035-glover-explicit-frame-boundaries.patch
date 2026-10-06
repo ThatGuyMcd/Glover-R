@@ -1,0 +1,53 @@
+--- a/src/common/rt64_glover_configuration.h
++++ b/src/common/rt64_glover_configuration.h
+@@ -3,6 +3,17 @@
+ #include <atomic>
+ namespace RT64 {
+     inline std::atomic<bool> gloverSplitFrames{false};
++    inline thread_local bool gloverTaskFrameEnd = false;
++    inline void setGloverTaskFrameEnd(bool end) { gloverTaskFrameEnd = end; }
++    inline bool isGloverFrameEnd(unsigned bytes, unsigned first, unsigned last) {
++        return bytes == 16 && first == 0xE9000000U && last == 0xB8000000U;
++    }
++    template<typename Time, typename Duration>
++    inline Time gloverNextPresentDeadline(Time now, Time previous, Duration period) {
++        if (previous == Time{} || period <= Duration::zero()) return now;
++        const Time next = previous + period;
++        return now > next + period ? now : next;
++    }
+     inline void setGloverSplitFrames(bool enabled) { gloverSplitFrames.store(enabled); }
+     inline bool usesGloverSplitFrames() { return gloverSplitFrames.load(); }
+ }
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -234,6 +234,7 @@
+         uint64_t workloadId = 0;
+         uint32_t earlyPresentColorAddress = 0;
+         bool earlyPresentApproved = false;
++        bool gloverFrameEnd = false;
+         uint64_t presentId = 0;
+         bool paused = false;
+ 
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -1794,6 +1794,7 @@
+         // alternate color buffers cannot safely infer this from the framebuffer
+         // approved by a previous present event.
+         const bool presentEarly = !ext.presentQueue->viewRDRAM && (ext.enhancementConfig->presentation.mode == EnhancementConfiguration::Presentation::Mode::PresentEarly);
++        workload.gloverFrameEnd = usesGloverSplitFrames() && gloverTaskFrameEnd;
+         workload.earlyPresentApproved = false;
+         workload.earlyPresentColorAddress = 0;
+         if ((presentEarly || usesGloverSplitFrames()) && (workload.fbPairCount > 0)) {
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -926,7 +926,9 @@
+                 const bool splitFrame = usesGloverSplitFrames() && !workload.paused;
+                 if (splitFrame) {
+                     pendingGloverWorkloads.push_back(uint32_t(processCursor));
+-                    if ((workload.fbPairCount > 0) && (pendingGloverWorkloads.size() < 12)) {
++                    // Setup-only tasks occur inside the intro frame too. Only
++                    // the host-verified FullSync/EndDL task closes a full frame.
++                    if (!workload.gloverFrameEnd && (pendingGloverWorkloads.size() < 12)) {
+                         threadAdvanceWorkloadId(workload.workloadId);
+                         processCursor = -1;
+                         workloadProfiler.end();

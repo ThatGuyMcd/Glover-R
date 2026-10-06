@@ -1,0 +1,18 @@
+FAIL: test_shipped_runner_with_two_real_executable_paths (test_powershell_runner.PowerShellProcessIntegrationTests.test_shipped_runner_with_two_real_executable_paths)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Glover-R\tests\test_powershell_runner.py", line 108, in test_shipped_runner_with_two_real_executable_paths
+    self.assertEqual(completed.returncode, 0, completed.stdout)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : [stage] fixture.clean-stage : RUNNING
+[REQUEST] glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces tjx046bw\native workspace\build\logs\first.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces tjx046bw\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:FIRST
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 1; elapsed 0.1s
+System.Management.Automation.RuntimeException: RUNNER TEST FAILED: runner returns only one native exit code
+----------------------------------------------------------------------
+Ran 275 tests in 19.518s
+FAILED (failures=1, skipped=1)

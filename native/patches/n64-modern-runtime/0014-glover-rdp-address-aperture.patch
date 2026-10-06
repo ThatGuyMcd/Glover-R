@@ -1,0 +1,20 @@
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -571,9 +571,14 @@
+ 
+     // Send gfx tasks to the graphics action queue
+     if (task->t.type == M_GFXTASK) {
+-        constexpr size_t RDRAMSnapshotSize = 0x800000;
+-        auto rdram_snapshot = std::make_unique<uint8_t[]>(RDRAMSnapshotSize);
+-        std::memcpy(rdram_snapshot.get(), rdram, RDRAMSnapshotSize);
++        constexpr size_t InstalledRDRAMSize = 0x800000;
++        constexpr size_t RDPAddressApertureSize = 0x1000000;
++        // RDP addresses cover 24 bits. An unresolved guest texture reference
++        // can reach the uninstalled upper half; it must not dereference host
++        // memory beyond this immutable snapshot. Keep those reads zero-filled
++        // instead of aliasing them into installed RAM or altering guest data.
++        auto rdram_snapshot = std::make_unique<uint8_t[]>(RDPAddressApertureSize);
++        std::memcpy(rdram_snapshot.get(), rdram, InstalledRDRAMSize);
+         events_context.action_queue.enqueue(SpTaskAction{ *task, std::move(rdram_snapshot) });
+     }
+     // Set all other tasks as the RSP task

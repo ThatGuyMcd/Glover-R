@@ -1,0 +1,60 @@
+FAIL: test_shipped_runner_with_two_real_executable_paths (test_powershell_runner.PowerShellProcessIntegrationTests.test_shipped_runner_with_two_real_executable_paths)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\Glover-R\tests\test_powershell_runner.py", line 110, in test_shipped_runner_with_two_real_executable_paths
+    self.assertEqual(completed.returncode, 0, completed.stdout)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : [stage] fixture.clean-stage : RUNNING
+OLD_EXIT_CODE_SHADOW_REPRODUCED
+[REQUEST] glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\first.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:FIRST
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 0; elapsed 0.0s
+[REQUEST] glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\reordered.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\second tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:SECOND
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 0; elapsed 0.0s
+[REQUEST] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\explicit.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:FIRST
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 0; elapsed 0.0s
+[REQUEST] glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\alias.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\second tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:SECOND
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 0; elapsed 0.0s
+[stage] fixture.nonzero : RUNNING
+[REQUEST] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 17
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\nonzero.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 17
+PROBE:FIRST
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 17; elapsed 0.0s
+[stage] fixture.nonzero : FAILED
+[stage] fixture.exit-sequence : RUNNING
+[REQUEST] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+[LOG] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\native workspace\build\logs\sequence-27.log
+[RUN] C:\Users\Admin\AppData\Local\Temp\Glover native command tests with spaces 9gnp5hly\first tool directory\glover-runner-probe.cmd a path containing spaces 0
+PROBE:FIRST
+ARG:a path containing spaces
+warning: runner test stderr 
+[EXIT] code 0; elapsed 0.0s
+[stage] fixture.exit-sequence : PASS
+System.Management.Automation.RuntimeException: RUNNER TEST FAILED: caller shadow is neither read nor modified
+----------------------------------------------------------------------
+Ran 282 tests in 19.591s
+FAILED (failures=1, skipped=1)
+[EXIT] python.exe: code 1; elapsed 20.1s
+BUILD STOPPED: RuntimeError: Unit tests failed (exit 1).

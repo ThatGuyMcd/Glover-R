@@ -1,0 +1,18 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.png binary
+*.ico binary
+*.ttf binary
+*.otf binary
+# Keep the upstream font licence notices byte-for-byte.
+native/src/UI/fonts/OFL.txt -text
+native/src/UI/fonts/Selawik-OFL.txt -text

@@ -1,0 +1,131 @@
+int g_overlay_page = 0;
+void DrawSidebar(int& page, float width, bool overlay) {
+    // === GLOVER-R UI V36.5 DKR-R STYLE SIDEBAR BRAND ===
+    if (g_rocket_brand_rect >= 0) {
+        DrawRocketBrandCoin(width, overlay ? 160.0F : 180.0F);
+    } else {
+        ImGui::TextUnformatted("GLOVER-R");
+        UiHint("GLOVER RECOMPILED");
+        UiHint("RECOMPILED");
+    }
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    const std::array<const char*,6> labels{"PLAY","GRAPHICS","SOUND","CONTROLS","MODS","ABOUT"};
+    for (int i=0;i<static_cast<int>(labels.size());++i) {
+        const bool selected = i == page;
+        if (selected) ImGui::PushStyleColor(ImGuiCol_Button,kWarm);
+        if (ImGui::Button(labels[static_cast<std::size_t>(i)],{width,58.0F})) page=i;
+        if (selected) ImGui::PopStyleColor();
+    }
+    if (overlay) {
+        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Button,kRed);
+#if defined(__ANDROID__)
+        constexpr const char* exit_label = "EXIT GAME";
+#else
+        constexpr const char* exit_label = "EXIT TO DESKTOP";
+#endif
+        if (ImGui::Button(exit_label,{width,58.0F})) ultramodern::quit();
+        ImGui::PopStyleColor();
+    }
+}
+
+void DrawOverlayPage(int page, float width) {
+    if (page != 3) rocket::ui::controls::end_test();
+    switch (page) {
+        case 1: DrawGraphicsPage(width, true); break;
+        case 2: DrawSoundPage(width); break;
+        case 3: DrawControlsPage(width); break;
+        case 4: DrawPageHeader(Page::Mods); rocket::mods::ui::draw(); break;
+        case 5: DrawAboutPage(); break;
+        default:
+            DrawPageHeader(Page::Play);
+            ImGui::TextWrapped("Change your settings, then return to the game.");
+            ImGui::Spacing();
+            if (ImGui::Button("RETURN TO GAME", {280.0F, 60.0F})) {
+                g_overlay_visible.store(false, std::memory_order_release);
+            }
+            ImGui::Spacing();
+#if defined(__ANDROID__)
+            UiHint("Tap RETURN TO GAME or press Android Back.");
+#else
+            UiHint("Press Escape to return to the game.");
+#endif
+            break;
+    }
+}
+
+void DrawDiagnosticsOverlay(){}
+void rocket::ui::draw(RT64::Application& application) {
+    if (application.presentQueue == nullptr ||
+        application.framebufferGraphicsWorker == nullptr) return;
+
+    const bool visible = g_overlay_visible.load(std::memory_order_acquire);
+    const auto graphics = rocket::graphics::settings();
+    const bool diagnostics = graphics.performance_overlay ||
+                             graphics.interpolation_overlay;
+    if (!visible && !diagnostics) {
+        if (application.presentQueue->inspector != nullptr) detach(application);
+        return;
+    }
+    if (application.presentQueue->inspector == nullptr) Attach(application);
+    if (application.presentQueue->inspector == nullptr) return;
+
+    RT64::Inspector* inspector = application.presentQueue->inspector.get();
+    inspector->newFrame(application.framebufferGraphicsWorker.get());
+    ApplyStyle();
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard |
+                                  ImGuiConfigFlags_NavEnableGamepad;
+
+    if (visible) {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetNextWindowPos({0.0F, 0.0F});
+        ImGui::SetNextWindowSize(io.DisplaySize);
+        ImGui::SetNextWindowBgAlpha(0.50F);
+        ImGui::Begin("Glover-R Overlay", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+        const float margin = std::clamp(ImGui::GetWindowWidth() * 0.025F, 14.0F, 36.0F);
+        const float sidebar = std::clamp(ImGui::GetWindowWidth() * 0.24F, 210.0F, 330.0F);
+        const float gap = 18.0F;
+        const float height = ImGui::GetWindowHeight() - margin * 2.0F;
+        ImGui::SetCursorPos({margin, margin});
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {44/255.F,16/255.F,24/255.F,0.50F});
+        ImGui::BeginChild("overlay-nav", {sidebar, height}, true);
+        DrawSidebar(g_overlay_page, sidebar - 32.0F, true);
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        const float content_x = margin + sidebar + gap;
+        const float content_width = ImGui::GetWindowWidth() - content_x - margin;
+        ImGui::SetCursorPos({content_x, margin});
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {50/255.F,20/255.F,29/255.F,0.50F});
+        ImGui::BeginChild("overlay-content", {content_width, height}, true);
+        DrawOverlayPage(g_overlay_page, std::max(ImGui::GetContentRegionAvail().x, 1.0F));
+        DrawCapturePopup();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::End();
+    } else {
+        // This overlay is presentation-only and deliberately does not capture
+        // keyboard/controller input while the full settings overlay is closed.
+        DrawDiagnosticsOverlay();
+    }
+    inspector->endFrame();
+}
+
+bool rocket::ui::handle_runtime_event(SDL_Event*) { return true; }
+void rocket::ui::toggle_overlay() {
+    const bool next = !g_overlay_visible.load(std::memory_order_acquire);
+    g_overlay_visible.store(next, std::memory_order_release);
+    if (next) g_overlay_page = 0;
+    else {
+        controls::end_test();
+        std::lock_guard lock(g_capture_mutex);
+        if (g_capture.active()) g_capture.cancel();
+        g_capture_active.store(false);
+    }
+}
+

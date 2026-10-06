@@ -1,0 +1,27 @@
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -8,6 +8,8 @@
+ 
+ #include "common/rt64_elapsed_timer.h"
+ #include "common/rt64_math.h"
++#include "common/rt64_glover_configuration.h"
++#include <cstdio>
+ #include "common/rt64_rocket_configuration.h"
+ #include "hle/rt64_color_converter.h"
+ #include "gbi/rt64_f3d.h"
+@@ -1726,6 +1728,15 @@
+                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
+                         }
+                         
++                        if (usesGloverSplitFrames() && proj.type == Projection::Type::Perspective && proj.gameCallCount > 10 && d == 0) {
++                            static unsigned samples = 0;
++                            if (samples++ < 12) std::fprintf(stderr,
++                                "[glover][raster] fb=%u/%u target=%u/%u ratio=%.3f/%.3f inv=%.3f scale=%.3f clip=%.1f,%.1f,%.1f,%.1f scissor=%d,%d,%d,%d proj00=%.4f\n",
++                                p.fbWidth,p.fbHeight,p.targetWidth,p.targetHeight,p.aspectRatioSource,p.aspectRatioTarget,
++                                invRatioScale,float(triangles.screenScale.x),viewportClip.x,viewportClip.y,viewportClip.width,viewportClip.height,
++                                triangles.scissor.left,triangles.scissor.top,triangles.scissor.right,triangles.scissor.bottom,
++                                float(drawData.modProjTransforms[proj.transformsIndex][0][0]));
++                        }
+                         if (triangles.vertexTestZ && usesViewport) {
+                             instanceDrawCallVector[vertexTestZCallIndex].vertexTestZ.indexCount += call.callDesc.triangleCount * 3;
+                             vertexTestZFaceIndicesStart += call.callDesc.triangleCount * 3;

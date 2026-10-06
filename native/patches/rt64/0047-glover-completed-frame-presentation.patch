@@ -1,0 +1,67 @@
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -99,6 +99,8 @@
+         bool rdramCheckPending;
+         uint32_t lastWorkloadIndex;
+         VI lastScreenVI;
++        VI gloverCompletedFrameVI;
++        bool gloverCompletedFrameVIValid = false;
+         uint64_t lastScreenHash;
+         uint32_t lastScreenFactorCounter;
+         VIHistory viHistory;
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -1828,6 +1828,13 @@
+                     {
+                         workload.earlyPresentColorAddress = colorImg.address;
+                         workload.earlyPresentApproved = true;
++                        if (usesGloverSplitFrames()) {
++                            // Remember the VI for the buffer this frame draws,
++                            // rather than whichever buffer is being scanned out
++                            // while its individual tasks are still submitted.
++                            gloverCompletedFrameVI = entry.vi;
++                            gloverCompletedFrameVIValid = true;
++                        }
+                     }
+                 }
+             }
+@@ -1841,8 +1848,17 @@
+         dlCpuProfiler.reset();
+         dlCpuProfiler.start();
+         
++        // Glover's no-draw full-sync task closes the whole frame. Present its
++        // clear/background/models/HUD together, and wait for that final workload
++        // ID in the present queue. Ordinary VI events may arrive between tasks
++        // and must not publish partial frames or reuse another frame's counters.
++        if (usesGloverSplitFrames() && workload.gloverFrameEnd && gloverCompletedFrameVIValid) {
++            updateScreen(gloverCompletedFrameVI, true);
++            gloverCompletedFrameVIValid = false;
++        }
++
+         // Submit a presentation event instantly if applicable.
+-        if (presentEarly && (workload.fbPairCount > 0)) {
++        if (!usesGloverSplitFrames() && presentEarly && (workload.fbPairCount > 0)) {
+             thread_local std::unordered_set<uint32_t> colorImageAddressSet;
+             colorImageAddressSet.clear();
+             
+@@ -1937,6 +1953,9 @@
+             // vector races with the asynchronous present queue in games that
+             // alternate color buffers every rendered frame.
+             const Workload &presentWorkload = ext.workloadQueue->workloads[lastWorkloadIndex];
++            if (usesGloverSplitFrames() && presentWorkload.gloverFrameEnd) {
++                present.colorImageAddresses.emplace_back(screenFbAddress);
++            }
+             for (int32_t f = presentWorkload.fbPairCount - 1; f >= 0; f--) {
+                 const FramebufferPair &fbPair = presentWorkload.fbPairs[f];
+                 const auto &colorImg = fbPair.colorImage;
+@@ -1968,7 +1987,9 @@
+             }
+ 
+             // We ignore processing the updateScreen altogether in early present mode.
+-            if (presentEarly) {
++            if (presentEarly || usesGloverSplitFrames()) {
++                // VI history still measures the authored simulation rate. A
++                // Glover presentation is published only by its full-frame task.
+                 return;
+             }
+         }

@@ -1,0 +1,240 @@
+--- a/src/common/rt64_glover_configuration.h
++++ b/src/common/rt64_glover_configuration.h
+@@ -56,10 +56,33 @@
+         std::array<int32_t, 4> rect{};
+         std::array<int32_t, 4> previous{};
+         bool matched = false;
++        bool texcoordFlipped = false;
++        std::array<float, 4> texcoords{};
++        std::array<float, 4> previousTexcoords{};
++        float depth = 0.0f, previousDepth = 0.0f;
+     };
++    inline float gloverSkyTexcoordSpan(int32_t quarterSpan, int16_t derivative) {
++        return float(quarterSpan) * float(derivative) / 4096.0f;
++    }
++    // Preserve both sampling endpoints while positions and sprite scale move.
++    // The affine transform works for negative derivatives and flipped rectangles.
++    inline std::array<float, 4> gloverRectTexcoordTransform(const GloverRectMotion &m, float weight) {
++        std::array<float, 4> result{1, 1, 0, 0};
++        if (!m.matched) return result;
++        weight = std::clamp(weight, 0.0f, 1.0f);
++        for (unsigned axis = 0; axis < 2; ++axis) {
++            const float span = m.texcoords[axis + 2] - m.texcoords[axis];
++            if (!std::isfinite(span) || std::abs(span) < 1.0e-6f) continue;
++            const float begin = m.previousTexcoords[axis] + (m.texcoords[axis] - m.previousTexcoords[axis]) * weight;
++            const float end = m.previousTexcoords[axis + 2] + (m.texcoords[axis + 2] - m.previousTexcoords[axis + 2]) * weight;
++            result[axis] = (end - begin) / span;
++            result[axis + 2] = begin - m.texcoords[axis] * result[axis];
++        }
++        return result;
++    }
+     inline bool matchGloverRectMotion(GloverRectMotion &cur, const GloverRectMotion &prev) {
+         cur.matched = false;
+-        if (!cur.identity || cur.identity != prev.identity || cur.sky != prev.sky) return false;
++        if (!cur.identity || cur.identity != prev.identity || cur.sky != prev.sky || cur.texcoordFlipped != prev.texcoordFlipped) return false;
+         const int cw = cur.rect[2] - cur.rect[0], ch = cur.rect[3] - cur.rect[1];
+         const int pw = prev.rect[2] - prev.rect[0], ph = prev.rect[3] - prev.rect[1];
+         if (cw <= 0 || ch <= 0 || pw <= 0 || ph <= 0) return false;
+@@ -76,6 +99,8 @@
+         }
+         else if (std::abs(cur.rect[0] - prev.rect[0]) > 640 || std::abs(cur.rect[1] - prev.rect[1]) > 480 ||
+             cw > pw * 2 || pw > cw * 2 || ch > ph * 2 || ph > ch * 2) return false;
++        cur.previousTexcoords = prev.texcoords;
++        cur.previousDepth = prev.depth;
+         cur.matched = true;
+         return true;
+     }
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -1281,6 +1281,17 @@
+         float v1 = ult / 32.0f + vFractionOffset;
+         float u2 = lrs / 32.0f;
+         float v2 = lrt / 32.0f + vFractionOffset;
++        if (drawCall.gloverRectMotion.sky) {
++            // Sprite2D already supplies its complete strip in quarter-pixels.
++            // RDP scanline rounding and vFractionOffset would introduce a
++            // one-texel jump every time frameY crosses an integer pixel.
++            v1 = ult / 32.0f;
++            u2 = u1 + gloverSkyTexcoordSpan(flip ? drawRect.lry - drawRect.uly : drawRect.lrx - drawRect.ulx, dsdx);
++            v2 = v1 + gloverSkyTexcoordSpan(flip ? drawRect.lrx - drawRect.ulx : drawRect.lry - drawRect.uly, dtdy);
++        }
++        drawCall.gloverRectMotion.texcoords = {u1, v1, u2, v2};
++        drawCall.gloverRectMotion.texcoordFlipped = flip;
++        drawCall.gloverRectMotion.depth = drawCall.rdpParams.primDepth.x;
+         triTcFloats.emplace_back(u1);
+         triTcFloats.emplace_back(v1);
+         triTcFloats.emplace_back(flip ? u1 : u2);
+--- a/src/shared/rt64_raster_params.h
++++ b/src/shared/rt64_raster_params.h
+@@ -19,6 +19,9 @@
+         float skyDitherReduction;
+         float skyRowOffset;
+         uint skyRectangle;
++        float gloverPrimDepth;
++        float2 gloverTexcoordScale;
++        float2 gloverTexcoordOffset;
+     };
+ #ifdef HLSL_CPU
+ };
+--- a/src/render/rt64_framebuffer_renderer_call.h
++++ b/src/render/rt64_framebuffer_renderer_call.h
+@@ -42,6 +42,9 @@
+                 bool rocketSky : 1;
+                 float rocketSkyCurrentRow;
+                 float rocketSkyPreviousRow;
++                interop::float2 gloverTexcoordScale;
++                interop::float2 gloverTexcoordOffset;
++                float gloverPrimDepth;
+                 bool postBlendDitherNoise : 1;
+                 bool postBlendDitherNoiseNegative : 1;
+             } triangles;
+--- a/src/shaders/RasterVS.hlsl
++++ b/src/shaders/RasterVS.hlsl
+@@ -30,11 +30,13 @@
+     const bool zSourcePrim = (otherMode.zSource() == G_ZS_PRIM);
+     if (!copyMode && zSourcePrim) {
+         const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
+-        ndcPos.z = instanceRDPParams[instanceIndex].primDepth.x * ndcPos.w;
++        const float depth = gConstants.gloverPrimDepth >= 0.0f ?
++            gConstants.gloverPrimDepth : instanceRDPParams[instanceIndex].primDepth.x;
++        ndcPos.z = depth * ndcPos.w;
+     }
+ 
+     oPosition = ndcPos;
+-    oUV = iUV;
++    oUV = iUV * gConstants.gloverTexcoordScale + gConstants.gloverTexcoordOffset;
+     oSmoothColor = iColor;
+     oFlatColor = iColor;
+ }
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -88,7 +88,7 @@
+         }
+     }
+     
+-    RenderViewport convertViewportRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float aspectRatioScale, float extOriginPercentage, float horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin) {
++    RenderViewport convertViewportRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float aspectRatioScale, float extOriginPercentage, float horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin, bool subpixel = false) {
+         auto computeOrigin = [=](uint16_t origin) {
+             if (origin < G_EX_ORIGIN_NONE) {
+                 return ((fbWidth * origin) / G_EX_ORIGIN_RIGHT) * extOriginPercentage + (fbWidth / 2) * (1.0f - extOriginPercentage);
+@@ -107,10 +107,12 @@
+             }
+         };
+         
+-        float left = std::round((computeOrigin(leftOrigin) + (rect.left(true) - computeOrigin(leftOrigin)) * aspectRatioScale) * resScale.x);
+-        float right = std::round((computeOrigin(rightOrigin) + (rect.right(true) - computeOrigin(rightOrigin)) * aspectRatioScale) * resScale.x);
+-        float top = std::round(rect.top(true) * resScale.y);
+-        float bottom = std::round(rect.bottom(true) * resScale.y);
++        auto pixel = [=](int32_t quarter) { return subpixel ? quarter * 0.25f : float((quarter + 3) >> 2); };
++        auto snap = [=](float value) { return subpixel ? value : std::round(value); };
++        float left = snap((computeOrigin(leftOrigin) + (pixel(rect.ulx) - computeOrigin(leftOrigin)) * aspectRatioScale) * resScale.x);
++        float right = snap((computeOrigin(rightOrigin) + (pixel(rect.lrx) - computeOrigin(rightOrigin)) * aspectRatioScale) * resScale.x);
++        float top = snap(pixel(rect.uly) * resScale.y);
++        float bottom = snap(pixel(rect.lry) * resScale.y);
+         left = correctMisalignment(left, leftOrigin);
+         right = correctMisalignment(right, rightOrigin);
+         return RenderViewport(left, top, right - left, bottom - top);
+@@ -583,6 +585,9 @@
+                 rasterParams.screenOffset = triangles.screenOffset;
+                 rasterParams.skyDitherReduction = triangles.rocketSky ? skyDitherReduction : 0.0f;
+                 rasterParams.skyRectangle = triangles.rocketSky;
++                rasterParams.gloverTexcoordScale = triangles.gloverTexcoordScale;
++                rasterParams.gloverTexcoordOffset = triangles.gloverTexcoordOffset;
++                rasterParams.gloverPrimDepth = triangles.gloverPrimDepth;
+                 rasterParams.skyRowOffset = triangles.rocketSky ?
+                     triangles.rocketSkyPreviousRow + (triangles.rocketSkyCurrentRow - triangles.rocketSkyPreviousRow) * rocketPresentationWeight : 0.0f;
+                 worker->commandList->setGraphicsPushConstants(0, &rasterParams);
+@@ -1519,6 +1524,9 @@
+ 
+             for (uint32_t d = 0; (d < proj.gameCallCount) && (globalCallIndex < p.maxGameCall); d++) {
+                 const GameCall &call = proj.gameCalls[d];
++                triangles.gloverTexcoordScale = {1.0f, 1.0f};
++                triangles.gloverTexcoordOffset = {0.0f, 0.0f};
++                triangles.gloverPrimDepth = -1.0f;
+                 triangles.rocketSky = call.callDesc.rocketSkyBackground;
+                 triangles.rocketSkyCurrentRow = call.callDesc.rocketSkyCurrentRow;
+                 triangles.rocketSkyPreviousRow = call.callDesc.rocketSkyPreviousRow;
+@@ -1699,17 +1707,27 @@
+                                     (call.callDesc.tileCount > 0 && call.callDesc.rect.ulx == 0 && call.callDesc.rect.uly == 0 &&
+                                         isGloverScreenImage(call.callDesc.rect.lrx, call.callDesc.rect.lry,
+                                             int(p.fbWidth) * 4, int(p.fbHeight) * 4)));
+-                            RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                            const bool semanticSprite = usesGloverSplitFrames() && call.callDesc.gloverRectMotion.identity && !screenImage;
++                            RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin, semanticSprite);
+                             if (usesGloverSplitFrames() && call.callDesc.gloverRectMotion.matched && !screenImage) {
+                                 const auto &m = call.callDesc.gloverRectMotion;
+                                 const FixedRect previous(m.previous[0], m.previous[1], m.previous[2], m.previous[3]);
+                                 const auto old = convertViewportRect(previous, p.resolutionScale, p.fbWidth, invRatioScale,
+-                                    extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                                    extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin, true);
+                                 const float weight = std::clamp(rocketPresentationWeight, 0.0f, 1.0f);
+                                 viewportRect.x = old.x + (viewportRect.x - old.x) * weight;
+                                 viewportRect.y = old.y + (viewportRect.y - old.y) * weight;
+                                 viewportRect.width = old.width + (viewportRect.width - old.width) * weight;
+                                 viewportRect.height = old.height + (viewportRect.height - old.height) * weight;
++                                const auto uv = gloverRectTexcoordTransform(m, weight);
++                                triangles.gloverTexcoordScale = {uv[0], uv[1]};
++                                triangles.gloverTexcoordOffset = {uv[2], uv[3]};
++                                if (!m.sky) triangles.gloverPrimDepth = m.previousDepth + (m.depth - m.previousDepth) * weight;
++                                static unsigned skySamples = 0, worldSamples = 0;
++                                auto &samples = m.sky ? skySamples : worldSamples;
++                                if (samples++ < 12) std::fprintf(stderr,
++                                    "[glover][sprite-present] sky=%u weight=%.3f prev=%d,%d cur=%d,%d viewport=%.3f,%.3f uv=%.4f,%.4f,%.4f,%.4f\n",
++                                    m.sky,weight,m.previous[0],m.previous[1],m.rect[0],m.rect[1],viewportRect.x,viewportRect.y,uv[0],uv[1],uv[2],uv[3]);
+                             }
+                             if (screenImage) {
+                                 const auto covered = gloverScreenCover(call.callDesc.rect.ulx * 0.25f, call.callDesc.rect.uly * 0.25f,
+@@ -1754,9 +1772,9 @@
+                             (call.callDesc.rect.uly <= fbPair.scissorRect.uly) &&
+                             (call.callDesc.rect.lrx >= fbPair.scissorRect.lrx) &&
+                             (call.callDesc.rect.lry >= fbPair.scissorRect.lry);
+-                        const bool rocketHudCandidate =
+-                            (proj.type == Projection::Type::Orthographic) ||
+-                            ((proj.type == Projection::Type::Rectangle) && !fullFrameRect);
++                        const bool rocketHudCandidate = !call.callDesc.gloverRectMotion.identity &&
++                            ((proj.type == Projection::Type::Orthographic) ||
++                            ((proj.type == Projection::Type::Rectangle) && !fullFrameRect));
+                         if (rocketHudCandidate) {
+                             const uint32_t hudMode = getRocketHudAspectMode();
+                             const float outputAspect = std::max(p.aspectRatioTarget, 0.1f);
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -16,6 +16,7 @@
+     static void matchGloverRectangles(Workload &cur, const Workload &prev) {
+         std::unordered_map<uint64_t, std::vector<const GameCall *>> history;
+         std::unordered_map<uint64_t, unsigned> owners;
++        unsigned newOwners = 0, duplicates = 0, rejected = 0, uvChanges = 0;
+         auto visit = [](auto &work, auto callback) {
+             for (uint32_t f = 0; f < work.fbPairCount; ++f)
+                 for (uint32_t p = 0; p < work.fbPairs[f].projectionCount; ++p) {
+@@ -36,8 +37,8 @@
+             auto &motion = call.callDesc.gloverRectMotion;
+             if (!motion.identity) return;
+             const auto found = history.find(motion.identity);
+-            if (found == history.end()) return;
+-            if (!motion.sky && (owners[motion.identity] != 1 || found->second.size() != 1)) return;
++            if (found == history.end()) { ++newOwners; return; }
++            if (!motion.sky && (owners[motion.identity] != 1 || found->second.size() != 1)) { ++duplicates; return; }
+             for (const auto *old : found->second) {
+                 const auto &a = call.callDesc, &b = old->callDesc;
+                 if (a.rectAspect != b.rectAspect || a.rectLeftOrigin != b.rectLeftOrigin || a.rectRightOrigin != b.rectRightOrigin ||
+@@ -52,6 +53,8 @@
+                     sameMaterial &= cur.drawData.callTiles[a.tileIndex + t].tmemHashOrID == prev.drawData.callTiles[b.tileIndex + t].tmemHashOrID;
+                 if (sameMaterial && matchGloverRectMotion(motion, b.gloverRectMotion)) break;
+             }
++            if (!motion.matched) ++rejected;
++            else if (motion.texcoords != motion.previousTexcoords) ++uvChanges;
+         });
+         unsigned skies = 0, worlds = 0, matchedSky = 0, matchedWorld = 0;
+         visit(cur, [&](const GameCall &call) {
+@@ -62,8 +65,8 @@
+         });
+         static uint64_t samples = 0;
+         if ((skies || worlds) && ++samples % 301 == 1)
+-            std::fprintf(stderr, "[glover][sprite-motion] sky=%u/%u world=%u/%u matched/total\n",
+-                matchedSky, skies, matchedWorld, worlds);
++            std::fprintf(stderr, "[glover][sprite-motion] sky=%u/%u world=%u/%u matched/total new=%u duplicate=%u rejected=%u uv-changed=%u\n",
++                matchedSky, skies, matchedWorld, worlds,newOwners,duplicates,rejected,uvChanges);
+     }
+ 
+     // GameFrame

@@ -1,0 +1,10 @@
+{
+  "source_archive": "Glover-R-native-diagnostics-20260930-191032-062650.zip",
+  "source_archive_sha256": "1b88d7c579e00b60c523ea42b917b25b96ae86ddf5e434f8ca9dac733a073531",
+  "log_member": "build/logs/native-foundation-20260930-191032-062650.log",
+  "log_member_sha256": "7ffb6c6ba0ffea5edba41d1034e02587c705afd8a126477d946faa13cb3c9b96",
+  "excerpt_sha256": "2515052d2206c0d88791d43bca6a3a7091b0fca26209769ab55b405189a53f5f",
+  "old_logger_sha256": "7ae37dcead30bc46c74cddaccbc40829e47e6e4798440cefec2e13ca8cf17d2d",
+  "version": "0.2.0-boot.8",
+  "scope": "Exact unit-test failure excerpt; CRLF normalized to LF. Original source logger preserved for regression."
+}

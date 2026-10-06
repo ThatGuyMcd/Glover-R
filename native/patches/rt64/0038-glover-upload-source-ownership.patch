@@ -1,0 +1,67 @@
+--- a/src/common/rt64_glover_configuration.h
++++ b/src/common/rt64_glover_configuration.h
+@@ -2,6 +2,10 @@
+ #pragma once
+ #include <atomic>
+ #include <algorithm>
++#include <cstdint>
++#include <cstring>
++#include <limits>
++#include <vector>
+ namespace RT64 {
+     inline std::atomic<bool> gloverSplitFrames{false};
+     inline thread_local bool gloverTaskFrameEnd = false;
+@@ -30,6 +34,18 @@
+         return {left * scale + offsetX, top * scale + offsetY,
+             (right - left) * scale, (bottom - top) * scale};
+     }
++    // Upload workers must not borrow vectors that another split-frame pass
++    // can resize or replace before its queued copy completes.
++    inline bool snapshotGloverUpload(const void *source, size_t count, size_t stride,
++        std::vector<uint8_t> &owned) {
++        if (!source || !count || !stride || count > std::numeric_limits<size_t>::max() / stride) {
++            owned.clear();
++            return false;
++        }
++        owned.resize(count * stride);
++        std::memcpy(owned.data(), source, owned.size());
++        return true;
++    }
+     inline void setGloverSplitFrames(bool enabled) { gloverSplitFrames.store(enabled); }
+     inline bool usesGloverSplitFrames() { return gloverSplitFrames.load(); }
+ }
+--- a/src/render/rt64_buffer_uploader.h
++++ b/src/render/rt64_buffer_uploader.h
+@@ -54,6 +54,7 @@
+         std::condition_variable readyCondition;
+         RenderDevice *device;
+         std::vector<Upload> pendingUploads;
++        std::vector<std::vector<uint8_t>> pendingGloverData;
+ 
+         BufferUploader(RenderDevice *device);
+         ~BufferUploader();
+--- a/src/render/rt64_buffer_uploader.cpp
++++ b/src/render/rt64_buffer_uploader.cpp
+@@ -6,6 +6,7 @@
+ #include <cstring>
+ 
+ #include "common/rt64_thread.h"
++#include "common/rt64_glover_configuration.h"
+ 
+ #include "rt64_buffer_uploader.h"
+ 
+@@ -111,6 +112,14 @@
+         {
+             std::unique_lock<std::mutex> queueLock(workMutex);
+             pendingUploads = uploads;
++            if (usesGloverSplitFrames()) {
++                pendingGloverData.resize(pendingUploads.size());
++                for (size_t i = 0; i < pendingUploads.size(); ++i) {
++                    Upload &u = pendingUploads[i];
++                    if (u.valid() && snapshotGloverUpload(u.srcData, u.srcDataIndexRange.second,
++                        u.srcDataStride, pendingGloverData[i])) u.srcData = pendingGloverData[i].data();
++                }
++            }
+             updateResources(worker, pendingUploads);
+             workAvailable = true;
+         }

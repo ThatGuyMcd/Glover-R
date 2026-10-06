@@ -1,0 +1,11 @@
+{
+  "source": "User supplied build diagnostics, 30 September 2026",
+  "log_member": "build/logs/native-one-click-20260930-194610.log",
+  "project_version": "0.2.0-boot.7",
+  "scope": "Exact failing stage-5 suffix of the decoded transcript; CRLF normalized to LF; no ROM data",
+  "excerpt_sha256": "146c34f9ed3ba73067ea5a5c5d73ce05d005803ee72cbe03166dbf83d696c401",
+  "archives": {
+    "Glover-R-native-diagnostics-20260930-184546-042783.zip": "276a21de8848395f70253f31df4a8464452766954cf86f9b669c9ce6aa95c5ed",
+    "Glover-R-foundation-diagnostics-20260930-184546-210864.zip": "5cc9a13b7c88550943fc6f347dd76b2f2f9f4e1f578d822455a7f6cd9e70a353"
+  }
+}

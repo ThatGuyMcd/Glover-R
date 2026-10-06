@@ -1,0 +1,34 @@
+--- a/src/gbi/rt64_gbi_f3d.cpp
++++ b/src/gbi/rt64_gbi_f3d.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_gbi_f3d.h"
++#include "common/rt64_glover_configuration.h"
+ 
+ #include <cassert>
+ 
+@@ -199,6 +200,15 @@
+                 const uint32_t line = ((loadPixels * (rgba32 ? 16 : pixelBits) + 63) / 64);
+                 const uint32_t tmemBytes = (rgba32 || sprite.format == G_IM_FMT_CI) ? 2048 : 4096;
+                 const uint32_t rowsPerLoad = std::max(1U, tmemBytes / (line * 8));
++                // Glover's scrolling sky uses adjacent oversized sprites. Each
++                // strip is clipped by the same full-screen scissor, so treating
++                // it as a HUD rectangle leaves the widened side areas untouched.
++                // Preserve smaller logo/HUD sprites at their authored aspect.
++                const auto &scissor = rdp.scissorRectStack[rdp.scissorStackSize - 1];
++                const uint8_t savedAspect = rdp.extended.global.rectAspect;
++                const bool background = usesGloverSplitFrames() && !scissor.isEmpty() &&
++                    (int32_t(sprite.width) * 4096 / scaleX >= 2 * (scissor.lrx - scissor.ulx));
++                if (background) rdp.setRectAspect(G_EX_ASPECT_STRETCH);
+                 state->startSpriteCommand(0);
+                 for (uint32_t row = 0; row < uint32_t(sprite.height); row += rowsPerLoad) {
+                     const uint32_t rows = std::min(rowsPerLoad, uint32_t(sprite.height) - row);
+@@ -219,6 +229,7 @@
+                         flipY ? -int32_t(scaleY) : scaleY, false);
+                 }
+                 state->endSpriteCommand();
++                if (background) rdp.setRectAspect(savedAspect);
+             }
+         }
+ 

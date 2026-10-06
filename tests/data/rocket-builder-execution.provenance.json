@@ -1,0 +1,12 @@
+{
+  "repository": "ThatGuyMcd/Rocket-R",
+  "commit": "133070e264350f17257a520ae0de4da98ce445b0",
+  "path": "scripts/OneClickBuild.ps1",
+  "git_blob_sha1": "58531fa7cb610e54a21112494e497cc36c534762",
+  "start_line": 836,
+  "end_line": 1310,
+  "fixture_sha256": "0e4a8ac251755552834eeef5245f49814779ce16839ed616d7baffd292eba9db",
+  "retrieval": "GitHub connector fetch_file at the pinned commit; execution block retained as UTF-8 LF text.",
+  "scope": "All nine build stages and top-level error handler. Helper function definitions above line 836 are not part of this fixture. This fixture is adapted as text, not executed as a Windows build.",
+  "license": "Rocket-R GPL-3.0; see LICENSE and LICENSE.md in this package."
+}

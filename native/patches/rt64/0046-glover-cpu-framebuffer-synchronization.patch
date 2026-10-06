@@ -1,0 +1,84 @@
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -1977,6 +1977,11 @@
+         bool fbChangesMade = false;
+         bool screenChangesMade = false;
+         if (newVI.visible()) {
++            // CPU framebuffer uploads use a third graphics queue. Match the
++            // render/present lock and keep it through GPU completion; the
++            // screen change pool lock alone does not protect the color target.
++            std::unique_lock<std::mutex> framebufferLock(ext.sharedQueueResources->workloadMutex, std::defer_lock);
++            if (usesGloverSplitFrames()) framebufferLock.lock();
+             // See if there's an existing framebuffer that lines up with the VI. If there is, we support reading 
+             // CPU changes directly to it and recreating them in the render thread at low resolution.
+             RenderWorker *worker = ext.framebufferGraphicsWorker;
+@@ -1988,6 +1993,12 @@
+                     const uint8_t *fbRAM = &RDRAM[screenFb->addressStart];
+                     uint64_t currentHash = XXH3_64bits(fbRAM, screenFb->RAMBytes);
+                     if (currentHash != screenFb->RAMHash) {
++                        if (usesGloverSplitFrames() && std::getenv("GLOVER_MENU_TRACE")) {
++                            std::fprintf(stderr, "[glover][cpu-fb] workload=%llu present=%llu vi=%08X target=%08X bytes=%u hash=%016llX previous=%016llX\n",
++                                (unsigned long long)workloadId, (unsigned long long)presentId, screenFbAddress,
++                                screenFb->addressStart, screenFb->RAMBytes, (unsigned long long)currentHash,
++                                (unsigned long long)screenFb->RAMHash);
++                        }
+                         {
+                             RenderWorkerExecution workerExecution(worker);
+                             thread_local std::vector<uint32_t> fbDiscards;
+--- a/src/hle/rt64_shared_queue_resources.h
++++ b/src/hle/rt64_shared_queue_resources.h
+@@ -24,6 +24,9 @@
+         uint32_t available = 0;
+         uint32_t count = 0;
+         bool skipped = false;
++        // Private Glover diagnostics identify the owner of each counter set.
++        uint64_t gloverWorkloadId = 0;
++        uint32_t gloverColorAddress = 0;
+     };
+ 
+     struct SharedQueueResources {
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -1162,6 +1162,8 @@
+                 curFrameCounters.presented = 0;
+                 curFrameCounters.available = 0;
+                 curFrameCounters.count = displayFrames;
++                curFrameCounters.gloverWorkloadId = workload.workloadId;
++                curFrameCounters.gloverColorAddress = interpolationTargetKey.address;
+ 
+                 // Create as many render targets as required to store the interpolated targets.
+                 auto &interpolatedTargets = ext.sharedResources->interpolatedColorTargets;
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -328,12 +328,13 @@
+                     }
+                     if (remaining && trace) {
+                         --remaining;
+-                        std::fprintf(trace, "present %llu workload %llu vi %08X i %d count %d counters %u %u %u %u target %08X size %u %u locked %u\n",
++                        std::fprintf(trace, "present %llu workload %llu vi %08X i %d count %d counters %u %u %u %u target %08X size %u %u locked %u owner %llu color %08X\n",
+                             (unsigned long long)present.presentId, (unsigned long long)present.workloadId,
+                             present.screenVI.fbAddress(), i, framesToPresent, frameCounters.count,
+                             frameCounters.available, frameCounters.presented, unsigned(frameCounters.skipped),
+                             colorTarget ? colorTarget->addressForName : 0, colorTarget ? colorTarget->width : 0,
+-                            colorTarget ? colorTarget->height : 0, unsigned(lockedWorkloadMutex));
++                            colorTarget ? colorTarget->height : 0, unsigned(lockedWorkloadMutex),
++                            (unsigned long long)frameCounters.gloverWorkloadId, frameCounters.gloverColorAddress);
+                         if (!remaining) std::fflush(trace);
+                     }
+                 }
+--- a/src/contrib/plume/plume_d3d12.cpp
++++ b/src/contrib/plume/plume_d3d12.cpp
+@@ -2686,6 +2686,13 @@
+             fprintf(stderr, "CreateCommandQueue failed with error code 0x%lX.\n", res);
+             return;
+         }
++        if (gloverD3dValidation()) {
++            static std::atomic<unsigned> nextId{0};
++            const unsigned id = nextId.fetch_add(1);
++            const std::wstring name = L"Glover queue " + std::to_wstring(id);
++            d3d->SetName(name.c_str());
++            std::fprintf(stderr, "[glover][d3d12-queue] id=%u type=%u object=%p\n", id, unsigned(type), (void *)d3d);
++        }
+     }
+ 
+     D3D12CommandQueue::~D3D12CommandQueue() {

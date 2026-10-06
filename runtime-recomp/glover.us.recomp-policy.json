@@ -1,0 +1,625 @@
+{
+  "schemaVersion": 1,
+  "romSha1": "270be17b3c8da9b88a7b99c2a545b0bce16837f4",
+  "stubs": [],
+  "ignored": [
+    "func_8010D860",
+    "func_8010D9CC",
+    "func_8010DD0C",
+    "func_8010DDD0"
+  ],
+  "renamed": [],
+  "instructionPatches": [
+    {
+      "function": "recomp_entrypoint",
+      "vram": "0x80139E44",
+      "romOffset": "0x0003AE44",
+      "expectedInstruction": "0x0C0740F8",
+      "expectedDelaySlot": "0x00000000",
+      "value": "0x00000000",
+      "reason": "Only the unused out-of-cartridge startup identification probe is redirected. Normal osPiReadIo remains intact.",
+      "elfFunction": "glover_game_init",
+      "symbolNote": "The pinned N64Recomp ELF reader renames the configured callable entry to recomp_entrypoint before resolving policy hooks."
+    },
+    {
+      "function": "func_8010D97C",
+      "vram": "0x8010D984",
+      "expectedInstruction": "0xBD010000",
+      "value": "0x00000000",
+      "elfFunction": "func_8010D97C",
+      "romOffset": "0xE984",
+      "reason": "Exact cartridge cache-loop operation only; guest memory is coherent in the pinned native runtime. Keep the rest of the loop and its register effects unchanged."
+    },
+    {
+      "function": "func_8010D998",
+      "vram": "0x8010D9A0",
+      "expectedInstruction": "0xBD000000",
+      "value": "0x00000000",
+      "elfFunction": "func_8010D998",
+      "romOffset": "0xE9A0",
+      "reason": "Exact cartridge cache-loop operation only; guest memory is coherent in the pinned native runtime. Keep the rest of the loop and its register effects unchanged."
+    }
+  ],
+  "functionHooks": [
+    {
+      "function": "func_80155A44",
+      "beforeVram": "0x80155A9C",
+      "romOffset": "0x00056A9C",
+      "expectedInstruction": "0x3C02801F",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80155A44",
+      "reason": "Allow the graphics worker to acknowledge the start/stop drawing handshake. Preserve its request and acknowledgement flags and all guest registers.",
+      "expectedFollowingInstruction": "0x9042C7A6"
+    },
+    {
+      "function": "func_80155AE4",
+      "beforeVram": "0x80155B3C",
+      "romOffset": "0x00056B3C",
+      "expectedInstruction": "0x3C02801F",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80155AE4",
+      "reason": "Allow the graphics worker to acknowledge the start/stop drawing handshake. Preserve its request and acknowledgement flags and all guest registers.",
+      "expectedFollowingInstruction": "0x9042C7A6"
+    },
+    {
+      "function": "func_80132A30",
+      "beforeVram": "0x80132A64",
+      "romOffset": "0x00033A64",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132A30",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132B08",
+      "beforeVram": "0x80132B24",
+      "romOffset": "0x00033B24",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132B08",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132B5C",
+      "beforeVram": "0x80132B78",
+      "romOffset": "0x00033B78",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132B5C",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132BB0",
+      "beforeVram": "0x80132BCC",
+      "romOffset": "0x00033BCC",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132BB0",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132C04",
+      "beforeVram": "0x80132C20",
+      "romOffset": "0x00033C20",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132C04",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132C58",
+      "beforeVram": "0x80132C74",
+      "romOffset": "0x00033C74",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132C58",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132CAC",
+      "beforeVram": "0x80132CC8",
+      "romOffset": "0x00033CC8",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132CAC",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132D00",
+      "beforeVram": "0x80132D1C",
+      "romOffset": "0x00033D1C",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132D00",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132D54",
+      "beforeVram": "0x80132D70",
+      "romOffset": "0x00033D70",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132D54",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_80132DA8",
+      "beforeVram": "0x80132DC4",
+      "romOffset": "0x00033DC4",
+      "expectedInstruction": "0x3C028020",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80132DA8",
+      "reason": "Poll the runtime external-message queue and honor guest thread priorities while waiting for the EEPROM work queue to empty. Preserve the flag, save operation and all guest registers.",
+      "expectedFollowingInstruction": "0x9042A9B0"
+    },
+    {
+      "function": "func_8011CAF8",
+      "beforeVram": "0x8011CB20",
+      "romOffset": "0x0001DB20",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040003",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_8011CAF8",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_8011CCF0",
+      "beforeVram": "0x8011CD28",
+      "romOffset": "0x0001DD28",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_8011CCF0",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_8011E51C",
+      "beforeVram": "0x8011EA28",
+      "romOffset": "0x0001FA28",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_8011E51C",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_8011EAB8",
+      "beforeVram": "0x8011F8F4",
+      "romOffset": "0x000208F4",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_8011EAB8",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_80122D90",
+      "beforeVram": "0x80122E08",
+      "romOffset": "0x00023E08",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80122D90",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_80122D90",
+      "beforeVram": "0x80122F54",
+      "romOffset": "0x00023F54",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80122D90",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_801230A8",
+      "beforeVram": "0x801234B4",
+      "romOffset": "0x000244B4",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_801230A8",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_80123514",
+      "beforeVram": "0x80123A68",
+      "romOffset": "0x00024A68",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80123514",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_80125294",
+      "beforeVram": "0x80125748",
+      "romOffset": "0x00026748",
+      "expectedInstruction": "0x0C0702C0",
+      "expectedDelaySlot": "0x24040001",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80125294",
+      "reason": "Let the audio thread process the stop request while this scene-transition loop polls MusAsk. Preserve the query, completion condition and all guest registers."
+    },
+    {
+      "function": "func_80177A14",
+      "beforeVram": "0x80177A70",
+      "romOffset": "0x00078A70",
+      "expectedInstruction": "0x3C048029",
+      "expectedFollowingInstruction": "0x8C840424",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80177A14",
+      "reason": "Let the audio thread complete the music-handle stop/start handshake while the main thread polls MusHandleAsk. Preserve the handle and completion condition."
+    },
+    {
+      "function": "func_80177A14",
+      "beforeVram": "0x801780C4",
+      "romOffset": "0x000790C4",
+      "expectedInstruction": "0x3C048029",
+      "expectedFollowingInstruction": "0x8C840424",
+      "text": "extern void yield_self_1ms(uint8_t*); yield_self_1ms(rdram);",
+      "elfFunction": "func_80177A14",
+      "reason": "Let the audio thread complete the music-handle stop/start handshake while the main thread polls MusHandleAsk. Preserve the handle and completion condition."
+    },
+    {
+      "function": "recomp_entrypoint",
+      "beforeVram": "0x80139E44",
+      "romOffset": "0x0003AE44",
+      "expectedInstruction": "0x0C0740F8",
+      "text": "extern void glover_boot_probe_read(uint8_t*, recomp_context*); glover_boot_probe_read(rdram, ctx);",
+      "elfFunction": "glover_game_init",
+      "symbolNote": "The pinned N64Recomp ELF reader renames the configured callable entry to recomp_entrypoint before resolving policy hooks."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D14",
+      "romOffset": "0x00011D14",
+      "expectedInstruction": "0x00400008",
+      "expectedDelaySlot": "0x00000000",
+      "expectedJumpTable": {
+        "romOffset": "0x00001290",
+        "entries": [
+          "0x80110D1C",
+          "0x80110D2C",
+          "0x80110D3C",
+          "0x80110D4C",
+          "0x80110D5C",
+          "0x80110D6C"
+        ]
+      },
+      "text": "switch ((uint32_t)ctx->r2) { case 0x80110D1CU: goto glover_file_select_0; case 0x80110D2CU: goto glover_file_select_1; case 0x80110D3CU: goto glover_file_select_2; case 0x80110D4CU: goto glover_file_select_3; case 0x80110D5CU: goto glover_file_select_4; case 0x80110D6CU: goto glover_file_select_5; default: switch_error(__func__, 0x80110D14, 0x80100290); }",
+      "reason": "Original six-entry file-select jump table uses an incremented s2 pointer instead of the indexed pattern recognized by N64Recomp. Dispatch within the owning function, preserving its stack frame and all six original case bodies."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D1C",
+      "romOffset": "0x00011D1C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A8",
+      "text": "glover_file_select_0: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D2C",
+      "romOffset": "0x00011D2C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A4",
+      "text": "glover_file_select_1: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D3C",
+      "romOffset": "0x00011D3C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A0",
+      "text": "glover_file_select_2: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D4C",
+      "romOffset": "0x00011D4C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A0",
+      "text": "glover_file_select_3: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D5C",
+      "romOffset": "0x00011D5C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A4",
+      "text": "glover_file_select_4: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110D6C",
+      "romOffset": "0x00011D6C",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xC42060A8",
+      "text": "glover_file_select_5: ;",
+      "reason": "Label the original file-select case for the checked in-function jump-table dispatch; execute its original instructions unchanged."
+    },
+    {
+      "function": "func_8013A284",
+      "beforeVram": "0x8013A2F0",
+      "romOffset": "0x0003B2F0",
+      "expectedInstruction": "0x0C071670",
+      "expectedFollowingInstruction": "0x00000000",
+      "text": "extern void glover_graphics_projection_begin(uint8_t*, recomp_context*); glover_graphics_projection_begin(rdram, ctx);",
+      "elfFunction": "func_8013A284",
+      "reason": "Adjust presentation FOV/far arguments at the verified guPerspective ABI; preserve authored 4:3 for RT64 aspect correction."
+    },
+    {
+      "function": "func_8013A284",
+      "beforeVram": "0x8013A2F8",
+      "romOffset": "0x0003B2F8",
+      "expectedInstruction": "0x3C048020",
+      "expectedFollowingInstruction": "0x24842260",
+      "text": "extern void glover_graphics_projection_end(uint8_t*, recomp_context*); glover_graphics_projection_end(rdram, ctx);",
+      "elfFunction": "func_8013A284",
+      "reason": "Restore owned temporary stack far argument immediately after guPerspective; guest camera globals remain unchanged."
+    },
+    {
+      "function": "func_80145258",
+      "beforeVram": "0x80145260",
+      "romOffset": "0x00046260",
+      "expectedInstruction": "0xC4800030",
+      "expectedFollowingInstruction": "0x44821000",
+      "text": "extern void glover_graphics_distance(uint8_t*, recomp_context*); glover_graphics_distance(rdram, ctx);",
+      "elfFunction": "func_80145258",
+      "reason": "Scale only the render visibility far-distance register after its signed halfword load; retain radius and original test."
+    },
+    {
+      "function": "func_8014C054",
+      "beforeVram": "0x8014C0D0",
+      "romOffset": "0x0004D0D0",
+      "expectedInstruction": "0x00420018",
+      "expectedFollowingInstruction": "0x00001012",
+      "text": "extern void glover_graphics_distance(uint8_t*, recomp_context*); glover_graphics_distance(rdram, ctx);",
+      "elfFunction": "func_8014C054",
+      "reason": "Scale only the billboard render far-distance register before squaring; scene, AI and particle lifetime limits remain authored."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D3AC",
+      "romOffset": "0x0004E3AC",
+      "expectedInstruction": "0x27BDFFE0",
+      "expectedFollowingInstruction": "0x3C02801F",
+      "text": "extern void glover_graphics_overlay_begin(uint8_t*, recomp_context*); glover_graphics_overlay_begin(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Scope the final screen-overlay camera to authored FOV and distance; gameplay camera settings must not resize transitions."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D4B0",
+      "romOffset": "0x0004E4B0",
+      "expectedInstruction": "0x3C01801F",
+      "expectedFollowingInstruction": "0xA031D403",
+      "text": "extern void glover_graphics_overlay_end(uint8_t*, recomp_context*); glover_graphics_overlay_end(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Close the final screen-overlay camera scope after either path has finished drawing."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D474",
+      "romOffset": "0x0004E474",
+      "expectedInstruction": "0x0C050DF9",
+      "expectedFollowingInstruction": "0x02002021",
+      "text": "extern void glover_graphics_transition_border_begin(uint8_t*, recomp_context*); glover_graphics_transition_border_begin(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Record only the display-list range emitted by the dedicated transition-mask model draw."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D47C",
+      "romOffset": "0x0004E47C",
+      "expectedInstruction": "0x3C018029",
+      "expectedFollowingInstruction": "0xC420D958",
+      "text": "extern void glover_graphics_transition_border_end(uint8_t*, recomp_context*); glover_graphics_transition_border_end(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Extend only the copied mask outer corners using its actual camera projection, rotation, depth and model scale. Preserve its opening, UVs and animation timing."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D40C",
+      "romOffset": "0x0004E40C",
+      "expectedInstruction": "0x0C050DF9",
+      "expectedFollowingInstruction": "0x00000000",
+      "text": "extern void glover_graphics_transition_image_begin(uint8_t*, recomp_context*); glover_graphics_transition_image_begin(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Record the dedicated full-screen fade image draw, separate from the spinning cutout mask."
+    },
+    {
+      "function": "func_8014D3AC",
+      "beforeVram": "0x8014D414",
+      "romOffset": "0x0004E414",
+      "expectedInstruction": "0x3C02801F",
+      "expectedFollowingInstruction": "0x8442C7DE",
+      "text": "extern void glover_graphics_transition_image_end(uint8_t*, recomp_context*); glover_graphics_transition_image_end(rdram, ctx);",
+      "elfFunction": "func_8014D3AC",
+      "reason": "Uniformly cover the viewport with the copied fade image using its actual model/view/projection, preserving UVs and guest assets."
+    },
+    {
+      "function": "func_8014C054",
+      "elfFunction": "func_8014C054",
+      "beforeVram": "0x8014C358",
+      "romOffset": "0x0004D358",
+      "expectedInstruction": "0x46006082",
+      "expectedFollowingInstruction": "0x00031900",
+      "text": "extern void glover_graphics_billboard_fov(uint8_t*, recomp_context*); glover_graphics_billboard_fov(rdram, ctx);",
+      "reason": "Use the gameplay focal-length ratio for billboard anchor offsets and visibility bounds."
+    },
+    {
+      "function": "func_8014C054",
+      "elfFunction": "func_8014C054",
+      "beforeVram": "0x8014C570",
+      "romOffset": "0x0004D570",
+      "expectedInstruction": "0x00021600",
+      "expectedFollowingInstruction": "0x00031C00",
+      "text": "extern void glover_graphics_billboard_fov(uint8_t*, recomp_context*); glover_graphics_billboard_fov(rdram, ctx);",
+      "reason": "Use the same focal-length ratio for billboard texture scale as for its anchor offsets."
+    },
+    {
+      "function": "func_8014C054",
+      "elfFunction": "func_8014C054",
+      "beforeVram": "0x8014C638",
+      "romOffset": "0x0004D638",
+      "expectedInstruction": "0x0C0531AC",
+      "expectedFollowingInstruction": "0xAFA30018",
+      "text": "extern void glover_graphics_billboard_begin(uint8_t*, recomp_context*); glover_graphics_billboard_begin(rdram, ctx);",
+      "reason": "Record the dedicated world billboard emitter range and stable owner before its call."
+    },
+    {
+      "function": "func_8014C054",
+      "elfFunction": "func_8014C054",
+      "beforeVram": "0x8014C640",
+      "romOffset": "0x0004D640",
+      "expectedInstruction": "0x3C028020",
+      "expectedFollowingInstruction": "0x8C422240",
+      "text": "extern void glover_graphics_billboard_end(uint8_t*, recomp_context*); glover_graphics_billboard_end(rdram, ctx);",
+      "reason": "Tag unused SetPrimDepth command bits with the world billboard owner; preserve all depth and draw parameters."
+    },
+    {
+      "function": "func_8013A284",
+      "elfFunction": "func_8013A284",
+      "beforeVram": "0x8013A698",
+      "romOffset": "0x0003B698",
+      "expectedInstruction": "0x03C0E821",
+      "expectedFollowingInstruction": "0x8FBF005C",
+      "text": "extern void glover_graphics_camera_commit(uint8_t*, recomp_context*); glover_graphics_camera_commit(rdram, ctx);",
+      "reason": "Reserve camera matrix copies through the checked guest matrix allocator and redirect only this gameplay camera load; later screen cameras cannot overwrite its FOV or view."
+    },
+    {
+      "function": "func_8013A6B0",
+      "elfFunction": "func_8013A6B0",
+      "beforeVram": "0x8013A6B0",
+      "romOffset": "0x0003B6B0",
+      "expectedInstruction": "0x27BDFFC8",
+      "expectedFollowingInstruction": "0xAFBF0034",
+      "text": "extern void glover_graphics_screen_camera_begin(uint8_t*, recomp_context*); glover_graphics_screen_camera_begin(rdram, ctx);",
+      "reason": "Capture the secondary screen-camera command range without applying gameplay FOV."
+    },
+    {
+      "function": "func_8013A6B0",
+      "elfFunction": "func_8013A6B0",
+      "beforeVram": "0x8013A85C",
+      "romOffset": "0x0003B85C",
+      "expectedInstruction": "0x03C0E821",
+      "expectedFollowingInstruction": "0x8FBF0034",
+      "text": "extern void glover_graphics_screen_camera_end(uint8_t*, recomp_context*); glover_graphics_screen_camera_end(rdram, ctx);",
+      "reason": "Reserve immutable copies of the secondary screen projection and view through the guest matrix allocator."
+    },
+    {
+      "function": "func_801437E4",
+      "elfFunction": "func_801437E4",
+      "beforeVram": "0x801437E4",
+      "romOffset": "0x000447E4",
+      "expectedInstruction": "0x27BDFF08",
+      "expectedFollowingInstruction": "0xAFB100E4",
+      "text": "extern void glover_graphics_ui_object_begin(uint8_t*, recomp_context*); glover_graphics_ui_object_begin(rdram, ctx);",
+      "reason": "Identify file-select, screen-pass and transition model owners before their hierarchy is drawn."
+    },
+    {
+      "function": "func_801437E4",
+      "elfFunction": "func_801437E4",
+      "beforeVram": "0x80143AD8",
+      "romOffset": "0x00044AD8",
+      "expectedInstruction": "0x8FBF00EC",
+      "expectedFollowingInstruction": "0x8FB200E8",
+      "text": "extern void glover_graphics_ui_object_end(uint8_t*, recomp_context*); glover_graphics_ui_object_end(rdram, ctx);",
+      "reason": "Consume menu model ownership at the shared object renderer return."
+    },
+    {
+      "function": "func_80143AFC",
+      "elfFunction": "func_80143AFC",
+      "beforeVram": "0x80144650",
+      "romOffset": "0x00045650",
+      "expectedInstruction": "0x24840001",
+      "expectedFollowingInstruction": "0x3C01801F",
+      "text": "extern void glover_graphics_ui_matrix(uint8_t*, recomp_context*); glover_graphics_ui_matrix(rdram, ctx);",
+      "reason": "Tag the emitted model matrix with an owner and hierarchy-node fingerprint; preserve its address and load/push parameters."
+    },
+    {
+      "function": "func_80162FF8",
+      "elfFunction": "func_80162FF8",
+      "beforeVram": "0x80163B64",
+      "romOffset": "0x00064B64",
+      "expectedInstruction": "0x0C05910A",
+      "expectedFollowingInstruction": "0x00000000",
+      "text": "extern void glover_mod_camera_request(uint8_t*, recomp_context*); glover_mod_camera_request(rdram, ctx);",
+      "reason": "Apply authored orbit requests after native acceleration and before the original geometry-aware camera adjustment; retain collision and final camera publication."
+    },
+    {
+      "function": "func_80110598",
+      "elfFunction": "func_80110598",
+      "beforeVram": "0x80110598",
+      "romOffset": "0x00011598",
+      "expectedInstruction": "0x27BDFE38",
+      "expectedFollowingInstruction": "0xAFA40134",
+      "text": "extern void glover_mod_frontend_tick(uint8_t*, recomp_context*); glover_mod_frontend_tick(rdram, ctx);",
+      "reason": "Dispatch frontend lifecycle without creating a second gameplay tick; gameplay uses the authored camera-update boundary."
+    },
+    {
+      "function": "func_8013F358",
+      "elfFunction": "func_8013F358",
+      "beforeVram": "0x8013FAF8",
+      "romOffset": "0x00040AF8",
+      "expectedInstruction": "0x0C058BFE",
+      "expectedFollowingInstruction": "0x00000000",
+      "text": "extern void glover_mod_frame_begin(uint8_t*, recomp_context*); glover_mod_frame_begin(rdram, ctx);",
+      "reason": "Scope SDK/camera callbacks to the normal authored game update; keep camera initialization warm-up loops original."
+    },
+    {
+      "function": "func_8013F358",
+      "elfFunction": "func_8013F358",
+      "beforeVram": "0x8013FB00",
+      "romOffset": "0x00040B00",
+      "expectedInstruction": "0x0C059238",
+      "expectedFollowingInstruction": "0x00000000",
+      "text": "extern void glover_mod_frame_end(uint8_t*, recomp_context*); glover_mod_frame_end(rdram, ctx);",
+      "reason": "Scope SDK/camera callbacks to the normal authored game update; keep camera initialization warm-up loops original."
+    },
+    {
+      "function": "func_80162FF8",
+      "elfFunction": "func_80162FF8",
+      "beforeVram": "0x801641C4",
+      "romOffset": "0x000651C4",
+      "expectedInstruction": "0xC7A40014",
+      "expectedFollowingInstruction": "0x46002101",
+      "text": "extern void glover_mod_camera_height(uint8_t*, recomp_context*); glover_mod_camera_height(rdram, ctx);",
+      "reason": "Override only the ordinary authored height-spring target after a successful pitch request; retain following, native spring integration, obstacle resolution and original scripted/disabled behavior."
+    },
+    {
+      "function": "func_801366E8",
+      "elfFunction": "func_801366E8",
+      "beforeVram": "0x80137190",
+      "romOffset": "0x00038190",
+      "expectedInstruction": "0x3C018029",
+      "expectedFollowingInstruction": "0xC422F964",
+      "text": "extern void glover_mod_first_person_request(uint8_t*, recomp_context*); glover_mod_first_person_request(rdram, ctx);",
+      "reason": "Dispatch authored first-person look after original stick input and before retail pitch limits and geometry checks; preserve native entry/exit, eye movement and publication."
+    }
+  ]
+}

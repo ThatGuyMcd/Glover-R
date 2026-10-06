@@ -1,0 +1,326 @@
+void DrawGraphicsPage(float width, bool in_game) {
+    auto config = ultramodern::renderer::get_graphics_config();
+    auto extra = rocket::graphics::settings();
+    bool config_changed = false;
+    bool extra_changed = false;
+    bool keep_named_preset = false;
+
+    DrawPageHeader(Page::Graphics);
+
+    constexpr const char* sections[]{"DISPLAY", "IMAGE", "CAMERA & DISTANCE", "DIAGNOSTICS"};
+    SectionTabs(sections, 4, width, g_graphics_section);
+
+    ImGui::TextUnformatted("Preset");
+    if (ImGui::BeginCombo("##graphics-preset", GraphicsPresetName(extra.preset))) {
+        const std::array<rocket::graphics::GraphicsPreset, 4> values{
+            rocket::graphics::GraphicsPreset::Original,
+            rocket::graphics::GraphicsPreset::Modern,
+            rocket::graphics::GraphicsPreset::HighQuality,
+            rocket::graphics::GraphicsPreset::Performance};
+        for (auto value : values) {
+            if (ImGui::Selectable(GraphicsPresetName(value), extra.preset == value)) {
+                rocket::graphics::apply_preset(value);
+                extra = rocket::graphics::settings();
+                SyncExtraGraphicsConfig(extra, config);
+                config_changed = true;
+                extra_changed = true;
+                keep_named_preset = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    UiHint("Changing a setting switches to Custom.");
+    ImGui::Separator();
+
+    const float control_width = std::min(width, 560.0F);
+    if (g_graphics_section == 0) {
+        ImGui::TextUnformatted("Graphics renderer");
+        if (in_game) {
+            UiHint("%s. Change this in the launcher before starting the game.",
+                                GraphicsApiName(config.api_option));
+        } else if (ImGui::BeginCombo("##graphics-api", GraphicsApiName(config.api_option))) {
+            std::array<ultramodern::renderer::GraphicsApi, 4> values{
+                ultramodern::renderer::GraphicsApi::Auto,
+                ultramodern::renderer::GraphicsApi::D3D12,
+                ultramodern::renderer::GraphicsApi::Vulkan,
+                ultramodern::renderer::GraphicsApi::Metal};
+            for (auto value : values) {
+#if !defined(__APPLE__)
+                if (value == ultramodern::renderer::GraphicsApi::Metal) continue;
+#endif
+#if !defined(_WIN32)
+                if (value == ultramodern::renderer::GraphicsApi::D3D12) continue;
+#endif
+                if (ImGui::Selectable(GraphicsApiName(value), config.api_option == value)) {
+                    config.api_option = value; config_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TextUnformatted("Window mode");
+        bool fullscreen = config.wm_option == ultramodern::renderer::WindowMode::Fullscreen;
+        if (ImGui::BeginCombo("##window-mode", fullscreen ? "Borderless fullscreen" : "Windowed")) {
+            if (ImGui::Selectable("Windowed", !fullscreen)) {
+                config.wm_option = ultramodern::renderer::WindowMode::Windowed; config_changed = true;
+            }
+            if (ImGui::Selectable("Borderless fullscreen", fullscreen)) {
+                config.wm_option = ultramodern::renderer::WindowMode::Fullscreen; config_changed = true;
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::Checkbox("VSync", &extra.vsync)) extra_changed = true;
+        UiHint("Matches frames to your display to reduce tearing.");
+        UiHint("Press Alt+Enter to switch between windowed and fullscreen.");
+
+        ImGui::TextUnformatted("Aspect ratio");
+        if (ImGui::BeginCombo("##aspect-preset", AspectPresetName(extra.aspect))) {
+            const std::array<rocket::graphics::AspectPreset, 6> values{
+                rocket::graphics::AspectPreset::Original4x3,
+                rocket::graphics::AspectPreset::FitWindow,
+                rocket::graphics::AspectPreset::Ratio16x9,
+                rocket::graphics::AspectPreset::Ratio16x10,
+                rocket::graphics::AspectPreset::Ratio21x9,
+                rocket::graphics::AspectPreset::Custom};
+            for (auto value : values) {
+                if (ImGui::Selectable(AspectPresetName(value), extra.aspect == value)) {
+                    extra.aspect = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (extra.aspect == rocket::graphics::AspectPreset::Custom) {
+            ImGui::SetNextItemWidth(control_width);
+            if (ImGui::SliderFloat("##aspect-custom", &extra.custom_aspect, 1.0F, 3.5F, "%.3f:1")) extra_changed = true;
+        }
+        UiHint("Widescreen expands the 3D view. Menus and HUD retain their original proportions.");
+
+        ImGui::TextUnformatted("Render resolution");
+        if (ImGui::BeginCombo("##resolution", ResolutionName(config.res_option))) {
+            const std::array<ultramodern::renderer::Resolution, 3> values{
+                ultramodern::renderer::Resolution::Auto,
+                ultramodern::renderer::Resolution::Original2x,
+                ultramodern::renderer::Resolution::Original};
+            for (auto value : values) {
+                if (ImGui::Selectable(ResolutionName(value), config.res_option == value)) {
+                    config.res_option = value; config_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        int scale = std::clamp(config.ds_option, 1, 4);
+        ImGui::TextUnformatted("Downsampling");
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderInt("##internal-scale", &scale, 1, 4, "%dx")) {
+            config.ds_option = scale; config_changed = true;
+        }
+
+        ImGui::TextUnformatted("Frame rate");
+        if (ImGui::BeginCombo("##refresh-rate", RefreshName(config.rr_option))) {
+            const std::array<ultramodern::renderer::RefreshRate, 3> values{
+                ultramodern::renderer::RefreshRate::Original,
+                ultramodern::renderer::RefreshRate::Display,
+                ultramodern::renderer::RefreshRate::Manual};
+            for (auto value : values) {
+                if (ImGui::Selectable(RefreshName(value), config.rr_option == value)) {
+                    config.rr_option = value; config_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (config.rr_option == ultramodern::renderer::RefreshRate::Manual) {
+            int manual_rate = std::clamp(config.rr_manual_value, 30, 500);
+            ImGui::SetNextItemWidth(control_width);
+            if (ImGui::SliderInt("##refresh-manual", &manual_rate, 30, 500, "%d FPS")) {
+                config.rr_manual_value = manual_rate; config_changed = true;
+            }
+        }
+        UiHint(config.rr_option == ultramodern::renderer::RefreshRate::Original
+            ? "Original game frame rate, without frame interpolation."
+            : "Smoother animation without changing the game's speed.");
+
+        ImGui::TextUnformatted("Display buffering");
+        if (ImGui::BeginCombo("##buffering", DisplayBufferingName(extra.display_buffering))) {
+            for (auto value : {rocket::graphics::DisplayBuffering::Double,
+                               rocket::graphics::DisplayBuffering::Triple}) {
+                if (ImGui::Selectable(DisplayBufferingName(value), extra.display_buffering == value)) {
+                    extra.display_buffering = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (in_game) UiHint("Restart the game to apply.");
+
+        ImGui::TextUnformatted("Framebuffer precision");
+        if (ImGui::BeginCombo("##fb-precision", FramebufferPrecisionName(extra.framebuffer_precision))) {
+            for (auto value : {rocket::graphics::FramebufferPrecision::Automatic,
+                               rocket::graphics::FramebufferPrecision::Original,
+                               rocket::graphics::FramebufferPrecision::High}) {
+                if (ImGui::Selectable(FramebufferPrecisionName(value), extra.framebuffer_precision == value)) {
+                    extra.framebuffer_precision = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (in_game) UiHint("Restart the game to apply.");
+
+        ImGui::TextUnformatted("Hardware resolve");
+        if (ImGui::BeginCombo("##hardware-resolve", HardwareResolveName(extra.hardware_resolve))) {
+            for (auto value : {rocket::graphics::HardwareResolve::Automatic,
+                               rocket::graphics::HardwareResolve::Off,
+                               rocket::graphics::HardwareResolve::On}) {
+                if (ImGui::Selectable(HardwareResolveName(value), extra.hardware_resolve == value)) {
+                    extra.hardware_resolve = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    } else if (g_graphics_section == 1) {
+        ImGui::TextUnformatted("Anti-aliasing");
+        if (ImGui::BeginCombo("##msaa", MsaaName(config.msaa_option))) {
+            const std::array<ultramodern::renderer::Antialiasing, 4> values{
+                ultramodern::renderer::Antialiasing::None,
+                ultramodern::renderer::Antialiasing::MSAA2X,
+                ultramodern::renderer::Antialiasing::MSAA4X,
+                ultramodern::renderer::Antialiasing::MSAA8X};
+            for (auto value : values) {
+                if (ImGui::Selectable(MsaaName(value), config.msaa_option == value)) {
+                    config.msaa_option = value; config_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TextUnformatted("Image scaling filter");
+        if (ImGui::BeginCombo("##texture-filter", TextureFilteringName(extra.texture_filtering))) {
+            for (auto value : {rocket::graphics::TextureFiltering::Nearest,
+                               rocket::graphics::TextureFiltering::Linear,
+                               rocket::graphics::TextureFiltering::AntiAliasedPixelScaling}) {
+                if (ImGui::Selectable(TextureFilteringName(value), extra.texture_filtering == value)) {
+                    extra.texture_filtering = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TextUnformatted("Anisotropic filtering");
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderInt("##anisotropy", &extra.anisotropy, 1, 16, "%dx")) extra_changed = true;
+        UiHint("Improves texture clarity at an angle.");
+        if (in_game) UiHint("Restart the game to apply.");
+
+        ImGui::TextUnformatted("Distant texture detail");
+        ImGui::SetNextItemWidth(control_width);
+        float distance_detail_percent = extra.texture_detail_at_distance * 100.0F;
+        if (ImGui::SliderFloat("##distance-detail", &distance_detail_percent, 0.0F, 100.0F, "%.0f%%")) {
+            extra.texture_detail_at_distance = distance_detail_percent / 100.0F;
+            extra_changed = true;
+        }
+        UiHint("0%%: Original   |   100%%: Maximum detail");
+        ImGui::TextWrapped("Higher values keep distant textures sharper, but may shimmer or reduce performance. Changes apply immediately.");
+
+
+
+        ImGui::TextUnformatted("Replacement texture mip bias");
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderFloat("##mip-bias", &extra.mip_lod_bias, -2.0F, 2.0F, "%+.2f")) extra_changed = true;
+        UiHint("For replacement textures: lower values use sharper detail; higher values use softer detail.");
+
+        ImGui::TextUnformatted("Screen effect");
+        if (ImGui::BeginCombo("##post-process", PostProcessName(extra.post_process))) {
+            for (auto value : {rocket::graphics::PostProcessMode::Off,
+                               rocket::graphics::PostProcessMode::Scanlines,
+                               rocket::graphics::PostProcessMode::CRT,
+                               rocket::graphics::PostProcessMode::Custom}) {
+                if (ImGui::Selectable(PostProcessName(value), extra.post_process == value)) {
+                    extra.post_process = value; extra_changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (extra.post_process != rocket::graphics::PostProcessMode::Off) {
+            ImGui::TextUnformatted("Effect strength");
+            ImGui::SetNextItemWidth(control_width);
+            if (ImGui::SliderFloat("##post-strength", &extra.post_process_strength, 0.0F, 100.0F, "%.0f%%")) extra_changed = true;
+        }
+        if (extra.post_process == rocket::graphics::PostProcessMode::Custom) {
+            const auto stems = CustomShaderStems();
+            const char* preview = extra.custom_shader.empty() ? "No shader selected" : extra.custom_shader.c_str();
+            if (ImGui::BeginCombo("##custom-shader", preview)) {
+                for (const auto& stem : stems) {
+                    if (ImGui::Selectable(stem.c_str(), extra.custom_shader == stem)) {
+                        extra.custom_shader = stem; extra_changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (stems.empty()) {
+                UiHint("Add .dxil files for Direct3D 12 or .spv files for Vulkan to your config/shaders folder.");
+            }
+            UiHint("Restart the game to apply your custom shader.");
+        }
+    } else if (g_graphics_section == 2) {
+        ImGui::TextUnformatted("Field of view adjustment");
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderFloat("##fov-offset", &extra.fov_offset_degrees, -20.0F, 40.0F, "%+.1f deg")) extra_changed = true;
+
+        ImGui::TextUnformatted("Draw distance");
+        ImGui::SetNextItemWidth(control_width);
+        int draw_distance_step = std::clamp(
+            static_cast<int>(std::lround(extra.draw_distance_multiplier)), 1, 6);
+        if (ImGui::SliderInt("##draw-distance", &draw_distance_step, 1, 6, "%dx")) {
+            extra.draw_distance_multiplier = static_cast<float>(draw_distance_step);
+            extra_changed = true;
+        }
+        UiHint("1x is the original distance. Higher values show objects farther away.");
+    } else {
+        DrawLiveLog();
+        ImGui::Spacing();
+        if (ImGui::Checkbox("Show performance stats", &extra.performance_overlay)) extra_changed = true;
+        if (ImGui::Checkbox("Show interpolation stats", &extra.interpolation_overlay)) extra_changed = true;
+        if (ImGui::CollapsingHeader("Detailed statistics")) {
+        const auto perf = rocket::graphics::performance_stats();
+        ImGui::Separator();
+        ImGui::Text("Frame rate: %.1f FPS (%.2f ms)", perf.fps, perf.frame_ms);
+        ImGui::Text("Display: %d Hz  |  Target: %d Hz", perf.display_rate, perf.target_rate);
+        ImGui::Text("Resolution scale: %.2fx", perf.resolution_scale);
+        ImGui::Text("Frames presented: %llu  |  Interpolated: %llu",
+                    static_cast<unsigned long long>(perf.presents),
+                    static_cast<unsigned long long>(perf.interpolated_presents));
+
+
+        UiHint("When a match between frames is uncertain, interpolation is skipped for that item.");
+        }
+    }
+    ImGui::Separator();
+    ImGui::Spacing();
+    if (ImGui::Button("RESET GRAPHICS", {std::min(width, 330.0F), 54.0F})) {
+        rocket::graphics::reset_settings();
+        extra = rocket::graphics::settings();
+        config.res_option = ultramodern::renderer::Resolution::Auto;
+        config.ar_option = ultramodern::renderer::AspectRatio::Original;
+        config.msaa_option = ultramodern::renderer::Antialiasing::None;
+        config.rr_option = ultramodern::renderer::RefreshRate::Original;
+        config.rr_manual_value = 60;
+        config.ds_option = 1;
+        config.hpfb_option = ultramodern::renderer::HighPrecisionFramebuffer::Auto;
+        config_changed = true;
+        extra_changed = true;
+        keep_named_preset = true;
+    }
+
+    if (extra_changed) {
+        SyncExtraGraphicsConfig(extra, config);
+        rocket::graphics::set_settings(extra, !keep_named_preset);
+        extra = rocket::graphics::settings();
+        // Aspect/culling settings are also consumed by the guest-thread frustum
+        // guard. Republish them immediately instead of waiting for a resize event.
+        rocket::widescreen::update_window_aspect(rocket::platform::sdl_window());
+        config_changed = true;
+    }
+    if (config_changed) {
+        ultramodern::renderer::set_graphics_config(config);
+        SaveSettings();
+    }
+}
+

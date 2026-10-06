@@ -1,0 +1,6 @@
+{
+  "source_archive": "Glover-R-0.2.0-boot.3-source.zip",
+  "source_member": "Glover-R/native/scripts/verify_native_tree.py",
+  "sha256": "3b20febb2a250cb34f66e7d14c7fe0bc5683261a09ecfe8c79d555d0195b61d9",
+  "purpose": "Unmodified Boot.3 verifier to reproduce the actual Boot.3 reader/writer contract failure."
+}

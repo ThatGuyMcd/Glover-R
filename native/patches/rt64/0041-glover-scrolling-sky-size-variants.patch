@@ -1,0 +1,18 @@
+--- a/src/gbi/rt64_gbi_f3d.cpp
++++ b/src/gbi/rt64_gbi_f3d.cpp
+@@ -242,10 +242,11 @@
+                     const int16_t s = (firstPixel + (flipX ? sprite.width - 1 : 0)) << 5;
+                     const int16_t t = flipY ? (rows - 1) << 5 : 0;
+                     rdp.gloverRectMotion = {};
+-                    // The verified scrolling sky image is 640x132. Keep UI,
+-                    // screen-cover artwork and every smaller sprite authored.
+-                    if (background && sprite.width == 640 && sprite.height == 132 &&
+-                        !rdp.gloverScreenCover && scissor.ulx == 0 && scissor.uly == 0) {
++                    // Short, double-width scrolling backgrounds include the
++                    // observed 640x124 sky as well as taller level variants.
++                    // Full screen art and smaller UI sprites remain authored.
++                    if (background && !rdp.gloverScreenCover &&
++                        scissor.ulx == 0 && scissor.uly == 0) {
+                         rdp.gloverRectMotion.identity = 0x2000000000000000ULL |
+                             (uint64_t(image) << 20) | (uint64_t(sprite.y + row) << 4) | uint64_t(flipX | (flipY << 1));
+                         rdp.gloverRectMotion.sky = true;

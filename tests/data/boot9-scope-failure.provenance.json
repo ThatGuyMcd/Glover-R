@@ -1,0 +1,11 @@
+{
+  "source_archive": "Glover-R-native-diagnostics-20260930-192725-430000.zip",
+  "source_archive_sha256": "b2e5fb30771835804150ed1861300a578f70d37ac5fcce1a7b56df4e78ee5ffb",
+  "source_entry": "build/logs/native-foundation-20260930-192725-430000.log",
+  "source_entry_sha256": "b3effe66bc722554c82c25e14aaebf181e1994e7b5f16ce55ddb16c8b9393865",
+  "excerpt_sha256": "734d0cf02fa4a9ffac6b9bab50d35159f32f5d2868c6f14d771d462a87135b45",
+  "old_fixture_sha256": "83ab4f490b3f89d247efdac5fe3aaad548971f656018823438f230f761ecf9a2",
+  "production_logger_sha256": "21ffa2b14dfb95e3467f36e57973cdf4a56d0350cc0923dd5a3b81a305b039b6",
+  "observed": "Exit codes 0 and 17 were returned correctly before the test-only script-scope preservation assertion failed.",
+  "new_test_scope": "Explicit function-local LASTEXITCODE; the global native exit code is expected to change."
+}

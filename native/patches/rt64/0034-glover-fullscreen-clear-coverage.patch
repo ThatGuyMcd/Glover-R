@@ -1,0 +1,49 @@
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1552,8 +1552,28 @@
+                     float invRatioScale = 1.0f / aspectRatioScale;
+                     int32_t horizontalMisalignment = 0;
+ 
++                    // Glover encodes full-screen fill edges inclusively (319.75),
++                    // while its scissor ends at 320. Without normalising that last
++                    // pixel, widescreen depth clears leave both side areas at zero.
++                    // Qualify only complete native-frame fills, preserving local UI.
++                    FixedRect fillRect = call.callDesc.rect;
++                    const FixedRect &fillScissor = call.callDesc.scissorRect;
++                    const bool gloverFullClear = usesGloverSplitFrames() &&
++                        call.callDesc.rectLeftOrigin == G_EX_ORIGIN_NONE &&
++                        call.callDesc.rectRightOrigin == G_EX_ORIGIN_NONE &&
++                        fillScissor.ulx == 0 && fillScissor.uly == 0 &&
++                        fillScissor.lrx == int32_t(p.fbWidth * 4) &&
++                        fillScissor.lry == int32_t(p.fbHeight * 4) &&
++                        fillRect.ulx == 0 && fillRect.uly == 0 &&
++                        fillRect.lrx >= fillScissor.lrx - 4 && fillRect.lrx <= fillScissor.lrx &&
++                        fillRect.lry >= fillScissor.lry - 4 && fillRect.lry <= fillScissor.lry;
++                    if (gloverFullClear) {
++                        fillRect.lrx = fillScissor.lrx;
++                        fillRect.lry = fillScissor.lry;
++                    }
++
+                     // A rect that spans the whole width of the scissor.
+-                    if ((call.callDesc.rect.ulx <= fbPair.scissorRect.ulx) && (call.callDesc.rect.lrx >= fbPair.scissorRect.lrx)) {
++                    if ((fillRect.ulx <= fbPair.scissorRect.ulx) && (fillRect.lrx >= fbPair.scissorRect.lrx)) {
+                         invRatioScale = 1.0f;
+                     }
+                     // A regular rectangle that should correct its misalignment.
+@@ -1561,7 +1581,15 @@
+                         horizontalMisalignment = int32_t(p.horizontalMisalignment);
+                     }
+ 
+-                    clearRect.rect = convertFixedRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                    clearRect.rect = convertFixedRect(fillRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                    if (gloverFullClear) {
++                        static unsigned clearSamples = 0;
++                        if (clearSamples++ < 8) std::fprintf(stderr,
++                            "[glover][clear] depth=%u authored=%d,%d,%d,%d corrected=%d,%d,%d,%d target=%u/%u clear=%d,%d,%d,%d ratio=%.3f\n",
++                            p.fbStorage->colorTarget == nullptr,call.callDesc.rect.ulx,call.callDesc.rect.uly,call.callDesc.rect.lrx,call.callDesc.rect.lry,
++                            fillRect.ulx,fillRect.uly,fillRect.lrx,fillRect.lry,p.targetWidth,p.targetHeight,
++                            clearRect.rect.left,clearRect.rect.top,clearRect.rect.right,clearRect.rect.bottom,invRatioScale);
++                    }
+                 }
+                 else if (call.callDesc.extendedType != DrawExtendedType::None) {
+                     switch (call.callDesc.extendedType) {

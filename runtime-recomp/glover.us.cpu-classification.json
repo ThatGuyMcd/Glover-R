@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "rom_sha1": "270be17b3c8da9b88a7b99c2a545b0bce16837f4",
+  "rom_sha256": "363c84be17c7c11e97df6069ee8f3b205cb190f60e0c02ca223892ff7f47367a",
+  "recompiler_commit": "81213c1831fab2521a6a5459c67b63437d67e253",
+  "rules": [
+    {
+      "elf_name": "func_8010D860",
+      "vram": "0x8010D860",
+      "size": 112,
+      "region_end": "0x8010D8D0",
+      "body_sha256": "1988ff964b6e8e17cce976a40e506d7b9139a31e8257ecc0ceeda758ab41c92e",
+      "region_sha256": "1988ff964b6e8e17cce976a40e506d7b9139a31e8257ecc0ceeda758ab41c92e",
+      "action": "hardware-only",
+      "reason": "Exception-vector templates and saved vector slots. The installer copies these bytes to 0x80000180/0x80000000; they are not host-callable game functions. Both replacement vectors target 0x8010D9CC."
+    },
+    {
+      "elf_name": "func_8010D9CC",
+      "vram": "0x8010D9CC",
+      "size": 764,
+      "region_end": "0x8010DD0C",
+      "body_sha256": "07aedd72475b5c247bbf76c3bc5b846e4b4bd0aa583cf707a8ebf88b2977f456",
+      "region_sha256": "dde6f56f5ee4e771fbc1e86bfd7b56f393c002e2257f26726658abf919e0f6b4",
+      "action": "hardware-only",
+      "reason": "Cartridge debug exception dispatcher: saves guest exception state, reads ErrorEPC/EPC/Cause, returns through ERET or saved hardware vectors. Includes in-region handler tails not represented as independent native functions."
+    },
+    {
+      "elf_name": "func_8010DD0C",
+      "vram": "0x8010DD0C",
+      "size": 108,
+      "region_end": "0x8010DDD0",
+      "body_sha256": "973b4110b7cefdd56d364dafc59890ba24e203098532407e7f2897fcfaab4398",
+      "region_sha256": "fddb0b14b93c5ef66838524c9acbed5d3425234ee5d72d64cc30035f650a13f0",
+      "action": "hardware-only",
+      "reason": "Vector restoration helper and exception-return tail, called only by the excluded cartridge exception dispatcher in decoded direct control flow."
+    },
+    {
+      "elf_name": "func_8010DDD0",
+      "vram": "0x8010DDD0",
+      "size": 768,
+      "region_end": "0x8010E0D0",
+      "body_sha256": "17d3eab1102748296a21a1e1f2b28f7014eee5ab3443c0aac571e5c1cd0be0cf",
+      "region_sha256": "17d3eab1102748296a21a1e1f2b28f7014eee5ab3443c0aac571e5c1cd0be0cf",
+      "action": "hardware-only",
+      "reason": "Exception-only complete register capture, including CP0 debug registers and FPU implementation register. Called from the excluded exception dispatcher, not an ordinary OS service."
+    },
+    {
+      "elf_name": "func_801C6B94",
+      "vram": "0x801C6B94",
+      "size": 188,
+      "region_end": "0x801C6C50",
+      "body_sha256": "3111ad43554a690660238d6d7ff9286e3764968830d9849b7b5a567ed1f348f1",
+      "region_sha256": "3111ad43554a690660238d6d7ff9286e3764968830d9849b7b5a567ed1f348f1",
+      "action": "upstream-ignored",
+      "reason": "libultra interrupt-context send_mesg helper: event-state queue delivery, saves return address in s2 and returns via jr s2; invoked only from upstream-ignored __osException. Not osSendMesg.",
+      "native_name": "send_mesg"
+    },
+    {
+      "elf_name": "__osGetSR",
+      "vram": "0x8010D9B4",
+      "size": 12,
+      "region_end": "0x8010D9C0",
+      "body_sha256": "2ea7fc1f266eee7e59be3d8ffee2aebda5c74a4e6765e268c725a9a6a9f50ddf",
+      "region_sha256": "2ea7fc1f266eee7e59be3d8ffee2aebda5c74a4e6765e268c725a9a6a9f50ddf",
+      "action": "compile-original",
+      "reason": "Verified duplicate __osGetSR body. Emit its ORIGINAL mfc0 Status / jr ra instructions under a unique symbol so live callers use N64Recomp cop0_status_read rather than an absent ignored-only symbol.",
+      "native_name": "glover_read_status_debug"
+    },
+    {
+      "elf_name": "__osGetSR",
+      "vram": "0x801C7320",
+      "size": 12,
+      "region_end": "0x801C732C",
+      "body_sha256": "2ea7fc1f266eee7e59be3d8ffee2aebda5c74a4e6765e268c725a9a6a9f50ddf",
+      "region_sha256": "2ea7fc1f266eee7e59be3d8ffee2aebda5c74a4e6765e268c725a9a6a9f50ddf",
+      "action": "compile-original",
+      "reason": "Verified duplicate __osGetSR body. Emit its ORIGINAL mfc0 Status / jr ra instructions under a unique symbol so live callers use N64Recomp cop0_status_read rather than an absent ignored-only symbol.",
+      "native_name": "glover_read_status_sdk"
+    },
+    {
+      "elf_name": "func_8010D97C",
+      "vram": "0x8010D97C",
+      "size": 28,
+      "region_end": "0x8010D998",
+      "body_sha256": "7fa634084d1c34c9ab3a71ad827d92d481a457df55a9557bf5e5f40088c82ded",
+      "region_sha256": "7fa634084d1c34c9ab3a71ad827d92d481a457df55a9557bf5e5f40088c82ded",
+      "action": "cache-loop",
+      "reason": "Retain original cache sweep loop and register effects. Only its single reviewed CACHE operation is removed in the maintained instruction policy, matching the pinned runtime coherent-memory cache-service semantics."
+    },
+    {
+      "elf_name": "func_8010D998",
+      "vram": "0x8010D998",
+      "size": 28,
+      "region_end": "0x8010D9B4",
+      "body_sha256": "b108f5136c8776d18c6006066648434d6510bba7727aa316e6071ef934da6a3f",
+      "region_sha256": "b108f5136c8776d18c6006066648434d6510bba7727aa316e6071ef934da6a3f",
+      "action": "cache-loop",
+      "reason": "Retain original cache sweep loop and register effects. Only its single reviewed CACHE operation is removed in the maintained instruction policy, matching the pinned runtime coherent-memory cache-service semantics."
+    }
+  ],
+  "cache_patches": [
+    {
+      "function": "func_8010D97C",
+      "vram": "0x8010D984",
+      "expectedInstruction": "0xBD010000",
+      "value": "0x00000000"
+    },
+    {
+      "function": "func_8010D998",
+      "vram": "0x8010D9A0",
+      "expectedInstruction": "0xBD000000",
+      "value": "0x00000000"
+    }
+  ],
+  "evidence": [
+    "Actual Boot.5 generator: Unhandled cop0 register in mtc0: 30, func_8010D860.",
+    "Read-only llvm-objdump MIPS3 analysis of the supplied, complete-hash-validated USA ROM and Boot.5 native ELF.",
+    "Pinned N64Recomp supports MFC0/MTC0 Status (12) and CFC1/CTC1 FCSR (31), not arbitrary CP0 state.",
+    "N64ModernRuntime ae1ffbb909d9f93c88c41830deb539f7feef5ed2 librecomp/src/ultra_translation.cpp has coherent-memory no-op cache services.",
+    "send_mesg is in pinned N64Recomp ignored_funcs; __osGetSR is ignored-only, not reimplemented_funcs."
+  ],
+  "limitations": [
+    "Direct-flow closure is checked over emitted function extents after guarded policy changes; this is not a proof of all runtime indirect-call targets.",
+    "Hardware handler bytes remain in the ELF and private ROM. No generated source is modified; no empty game-function stubs are introduced.",
+    "Native generation, linking, and game launch are separate tests. Classification alone does not establish that the game boots."
+  ],
+  "additional_entries": [
+    {
+      "name": "func_801D41A0",
+      "vram": "0x801D41A0",
+      "size": 44,
+      "body_sha256": "ea8c59f1a98d849a6f69b7bb74e8bc9422c91b31f3287d6890595ef45340acc0",
+      "reason": "Unsigned 64-bit remainder wrapper used by integer formatting. The original map ended at 0x801D41C0, excluding ADDIU SP,SP,0x28, JR RA and its delay slot. Original CPU bytes end at 0x801D41CC; preserve the complete stack restoration and return."
+    },
+    {
+      "name": "func_801C33A4",
+      "vram": "0x801C33A4",
+      "size": 532,
+      "body_sha256": "9659c5be35cec895c376ce6036e01e3f2b4eef61aa0e0fc346ada3748d05563f",
+      "reason": "Original audio DMA callback returned by func_801C35B8 (LUI 0x801C / ADDIU 0x33A4) and called through JALR at 0x801C90C4. Its nonstandard stack prologue follows the previous function return; original epilogue ends at 0x801C35B8."
+    },
+    {
+      "name": "func_80110520",
+      "vram": "0x80110520",
+      "size": 120,
+      "body_sha256": "d8fc3b85247ca250c7dafb10c95a6bc637c3ceb22375a43234dcb99c92bc1e16",
+      "reason": "Address-taken leaf callback after eight bytes of inline data. Separate it from func_801100B8 before jump-table seeding; original body returns at 0x80110590."
+    },
+    {
+      "name": "func_80117020",
+      "vram": "0x80117020",
+      "size": 188,
+      "body_sha256": "f145affb189ad042f0b3e10785e8a4636e02c692326f4f66a10c89d346f1ee3e",
+      "reason": "Address-taken .rodata callback after eight bytes of inline data. Its stack prologue starts after LUI/LW, so the original immediate-prologue heuristic missed it. Original return at 0x801170D4."
+    }
+  ]
+}

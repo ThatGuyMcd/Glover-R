@@ -1,0 +1,80 @@
+--- a/src/hle/rt64_rsp.h
++++ b/src/hle/rt64_rsp.h
+@@ -159,6 +159,11 @@
+         std::array<int16_t, 4> clipRatios;
+         std::array<Vertex, RSP_MAX_VERTICES> vertices;
+         std::array<uint32_t, RSP_MAX_VERTICES> indices;
++        // Branch decisions belong to guest RSP vertex slots, not workload-local
++        // indices which become invalid when Glover advances to another task.
++        std::array<float, RSP_MAX_VERTICES> gloverVertexScreenZ{};
++        std::array<float, RSP_MAX_VERTICES> gloverVertexClipW{};
++        std::bitset<RSP_MAX_VERTICES> gloverVertexValid;
+         std::bitset<RSP_MAX_VERTICES> used;
+         std::array<Light, RSP_MAX_LIGHTS + 1> lights;
+         int lightCount;
+--- a/src/hle/rt64_rsp.cpp
++++ b/src/hle/rt64_rsp.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_rsp.h"
++#include "common/rt64_glover_configuration.h"
+ 
+ #include <cassert>
+ 
+@@ -89,6 +90,7 @@
+         modelViewProjMatrix = hlslpp::float4x4(0.0f);
+         modelViewProjChanged = false;
+         modelViewProjInserted = false;
++        gloverVertexValid.reset();
+         lightCount = 0;
+         lightsChanged = false;
+         vertexFogIndex = 0;
+@@ -782,6 +784,11 @@
+             const interop::RSPViewport &viewport = viewportStack[viewportStackSize - 1];
+             posTransformed.emplace_back(tfPos);
+             posScreen.emplace_back((tfPos.xyz / hlslpp::float3(tfPos.w, -tfPos.w, tfPos.w)) * viewport.scale + viewport.translate);
++            if (usesGloverSplitFrames()) {
++                gloverVertexScreenZ[i] = posScreen.back()[2];
++                gloverVertexClipW[i] = tfPos.w;
++                gloverVertexValid.set(i);
++            }
+             floatIndex += 3;
+         }
+ 
+@@ -896,6 +903,7 @@
+ 
+             // We decode on the CPU anyway for depth tracking, branchZ and the debugger.
+             posScreen[globalIndex][2] = value / 65536.0f;
++            if (usesGloverSplitFrames()) gloverVertexScreenZ[dstIndex] = posScreen[globalIndex][2];
+             break;
+         }
+         default:
+@@ -908,8 +916,12 @@
+         const bool forceBranch = state->ext.enhancementConfig->f3dex.forceBranch || extended.forceBranch;
+         const int workloadCursor = state->ext.workloadQueue->writeCursor;
+         const Workload &workload = state->ext.workloadQueue->workloads[workloadCursor];
++        if (vtxIndex >= indices.size()) return;
+         const uint32_t globalIndex = indices[vtxIndex];
+-        const float screenZ = workload.drawData.posScreen[globalIndex][2] * DepthRange;
++        const bool glover = usesGloverSplitFrames();
++        if (glover && !gloverVertexValid.test(vtxIndex)) return;
++        if (!glover && globalIndex >= workload.drawData.posScreen.size()) return;
++        const float screenZ = (glover ? gloverVertexScreenZ[vtxIndex] : workload.drawData.posScreen[globalIndex][2]) * DepthRange;
+         const float zValueFloat = zValue / 65536.0f;
+         if (forceBranch || (screenZ < zValueFloat)) {
+             const uint32_t rdramAddress = fromSegmentedMasked(branchDl);
+@@ -921,8 +933,12 @@
+         const bool forceBranch = state->ext.enhancementConfig->f3dex.forceBranch || extended.forceBranch;
+         const int workloadCursor = state->ext.workloadQueue->writeCursor;
+         const Workload &workload = state->ext.workloadQueue->workloads[workloadCursor];
++        if (vtxIndex >= indices.size()) return;
+         const uint32_t globalIndex = indices[vtxIndex];
+-        const float posW = workload.drawData.posTransformed[globalIndex][3];
++        const bool glover = usesGloverSplitFrames();
++        if (glover && !gloverVertexValid.test(vtxIndex)) return;
++        if (!glover && globalIndex >= workload.drawData.posTransformed.size()) return;
++        const float posW = glover ? gloverVertexClipW[vtxIndex] : workload.drawData.posTransformed[globalIndex][3];
+         if (forceBranch || (posW < static_cast<float>(wValue))) {
+             const uint32_t rdramAddress = fromSegmentedMasked(branchDl);
+             *dl = reinterpret_cast<DisplayList *>(state->fromRDRAM(rdramAddress)) - 1;

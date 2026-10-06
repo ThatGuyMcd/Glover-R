@@ -1,0 +1,51 @@
+--- a/src/hle/rt64_game_frame.cpp
++++ b/src/hle/rt64_game_frame.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "common/rt64_math.h"
++#include "common/rt64_glover_configuration.h"
+ #include "common/rt64_rocket_sky.h"
+ 
+ #include "rt64_game_frame.h"
+@@ -49,6 +50,8 @@
+         const FramebufferPair &fbPair = workload.fbPairs[proj.fbPairIndex];
+         const Projection &fbProj = fbPair.projections[proj.projectionIndex];
+         const GameIndices::Projection &firstProj = scene.projections.front();
++        // Glover world and HUD passes own separate workload-local mappings.
++        if (usesGloverSplitFrames() && firstProj.workloadIndex != proj.workloadIndex) return false;
+         if (!areFramebufferPairsCompatible(workloadQueue, { firstProj.workloadIndex, firstProj.fbPairIndex }, { proj.workloadIndex, proj.fbPairIndex })) {
+             return false;
+         }
+@@ -256,6 +259,12 @@
+     void GameFrame::match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
+         tileInterpolationUsed = false;
+         lookAtInterpolationUsed = false;
++        // Menus/transitions change the number and roles of graphics passes.
++        // Use an authored frame until a compatible history exists.
++        if (usesGloverSplitFrames() && workloads.size() != prevFrame.workloads.size()) {
++            matched = false;
++            return;
++        }
+         matched = true;
+ 
+         thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
+@@ -413,6 +422,8 @@
+         const GameIndices::Projection &firstCurProjIndices = curScene.projections[0];
+         const GameIndices::Projection &firstPrevProjIndices = prevScene.projections[0];
+         GameFrameMap::WorkloadMap &firstCurWorkloadMap = frameMap.workloads[firstCurProjIndices.workloadIndex];
++        if (usesGloverSplitFrames() && (!firstCurWorkloadMap.mapped ||
++            firstCurWorkloadMap.prevWorkloadIndex != firstPrevProjIndices.workloadIndex)) return;
+         Workload &firstCurWorkload = workloadQueue.workloads[firstCurProjIndices.workloadIndex];
+         const FramebufferPair &firstCurFbPair = firstCurWorkload.fbPairs[firstCurProjIndices.fbPairIndex];
+         const Projection &firstCurProj = firstCurFbPair.projections[firstCurProjIndices.projectionIndex];
+@@ -482,7 +493,8 @@
+                 }
+ 
+                 if (viewProjMap.mapped) {
+-                    if (firstPrevWorkloadMap != nullptr) {
++                    if ((firstPrevWorkloadMap != nullptr) &&
++                        (prevProj.transformsIndex < firstPrevWorkloadMap->viewProjections.size())) {
+                         const GameFrameMap::ViewProjectionMap &prevViewProjMap = firstPrevWorkloadMap->viewProjections[prevProj.transformsIndex];
+                         viewProjMap.rigidBody = prevViewProjMap.rigidBody;
+                     }

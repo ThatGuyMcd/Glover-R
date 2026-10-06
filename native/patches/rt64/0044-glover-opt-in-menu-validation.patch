@@ -1,0 +1,154 @@
+--- a/src/contrib/plume/plume_d3d12.cpp
++++ b/src/contrib/plume/plume_d3d12.cpp
+@@ -8,6 +8,13 @@
+ #include "plume_d3d12.h"
+ 
+ #include <unordered_set>
++#include <atomic>
++#include <cstdlib>
++#ifdef PLUME_D3D12_AGILITY_SDK_ENABLED
++#include <directx/d3d12sdklayers.h>
++#else
++#include <d3d12sdklayers.h>
++#endif
+ 
+ #include <dxgi1_5.h>
+ 
+@@ -47,6 +54,21 @@
+     static const uint32_t ShaderDescriptorHeapSize = 65536;
+     static const uint32_t SamplerDescriptorHeapSize = 1024;
+     static const uint32_t TargetDescriptorHeapSize = 16384;
++
++    // Opt-in release diagnostics. This stays off in normal Windows builds;
++    // Linux has no D3D12 path. Validation messages go into the runtime log.
++    static bool gloverD3dValidation() {
++        static const bool enabled = std::getenv("GLOVER_D3D12_VALIDATION") != nullptr;
++        return enabled;
++    }
++    static void CALLBACK gloverD3dMessage(D3D12_MESSAGE_CATEGORY category,
++        D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id, LPCSTR text, void *) {
++        static std::atomic<unsigned> messages{0};
++        if (severity > D3D12_MESSAGE_SEVERITY_WARNING || messages.fetch_add(1) >= 200) return;
++        std::fprintf(stderr, "[glover][d3d12] category=%u severity=%u id=%u %s\n",
++            unsigned(category), unsigned(severity), unsigned(id), text);
++        std::fflush(stderr);
++    }
+ 
+     // Common functions.
+ 
+@@ -3798,6 +3820,18 @@
+             d3d->SetStablePowerState(TRUE);
+         #endif
+ 
++        if (gloverD3dValidation()) {
++            ID3D12InfoQueue1 *queue = nullptr;
++            HRESULT status = d3d->QueryInterface(IID_PPV_ARGS(&queue));
++            if (SUCCEEDED(status)) {
++                DWORD cookie = 0;
++                status = queue->RegisterMessageCallback(gloverD3dMessage,
++                    D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr, &cookie);
++                queue->Release();
++            }
++            std::fprintf(stderr, "[glover][d3d12] validation logger=0x%08lX\n", status);
++        }
++
+         D3D12MA::ALLOCATOR_DESC allocatorDesc = {};
+         allocatorDesc.pDevice = d3d;
+         allocatorDesc.pAdapter = adapter;
+@@ -4177,6 +4211,12 @@
+     // D3D12Interface
+ 
+     D3D12Interface::D3D12Interface() {
++        if (gloverD3dValidation()) {
++            ID3D12Debug *debug = nullptr;
++            const HRESULT result = D3D12GetDebugInterface(IID_PPV_ARGS(&debug));
++            if (SUCCEEDED(result)) { debug->EnableDebugLayer(); debug->Release(); }
++            std::fprintf(stderr, "[glover][d3d12] validation setup=0x%08lX\n", result);
++        }
+         // Create DXGI Factory.
+         UINT dxgiFactoryFlags = 0;
+ 
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -8,10 +8,73 @@
+ #include "common/rt64_glover_configuration.h"
+ 
+ #include "rt64_present_queue.h"
++#include <cstdlib>
++#include <cstdio>
++#include <string>
+ 
+ #define ENABLE_HIGH_RESOLUTION_RENDERER 1
+ 
+ namespace RT64 {
++    static void traceGloverFrame(WorkloadQueue &queue, const GameFrame &frame, unsigned target) {
++        static const char *directory = std::getenv("GLOVER_MENU_TRACE");
++        static uint64_t last = 0;
++        static unsigned remaining = 0, sample = 0;
++        if (!directory || frame.workloads.empty()) return;
++        const uint64_t id = queue.workloads[frame.workloads.back()].workloadId;
++        if (id == last) return;
++        last = id;
++        const std::string request = std::string(directory) + "/trace.request";
++        if (auto *trigger = std::fopen(request.c_str(), "rb")) {
++            std::fclose(trigger); std::remove(request.c_str()); remaining = 120;
++        }
++        if (!remaining) return;
++        --remaining;
++        const std::string path = std::string(directory) + "/frame-" + std::to_string(++sample) + ".txt";
++        auto *file = std::fopen(path.c_str(), "wb");
++        if (!file) return;
++        std::fprintf(file, "frame %llu target %u passes %zu matched %u\n",
++            (unsigned long long)id, target, frame.workloads.size(), unsigned(frame.matched));
++        for (unsigned w : frame.workloads) {
++            const auto &work = queue.workloads[w];
++            const auto &data = work.drawData;
++            const auto &map = frame.frameMap.workloads[w];
++            std::fprintf(file, "pass %u prev %u mapped %u vertex %u raw %u transforms %zu projections %zu\n",
++                w, map.prevWorkloadIndex, unsigned(map.mapped), data.vertexCount(), data.rawTriVertexCount(),
++                data.worldTransforms.size(), data.viewProjTransforms.size());
++            for (unsigned t = 0; t < data.worldTransforms.size(); ++t) {
++                const auto &group = data.transformGroups[data.worldTransformGroups[t]];
++                const auto &matrix = data.worldTransforms[t];
++                const auto *tm = map.mapped && t < map.transforms.size() ? &map.transforms[t] : nullptr;
++                std::fprintf(file, "model %u id %08X mapped %u prev %u pos %.5f %.5f %.5f\n", t, group.matrixId,
++                    unsigned(tm && tm->mapped), tm ? tm->prevTransformIndex : 0,
++                    float(matrix[3][0]), float(matrix[3][1]), float(matrix[3][2]));
++            }
++            for (unsigned f = 0; f < work.fbPairCount; ++f) {
++                const auto &pair = work.fbPairs[f];
++                std::fprintf(file, "fb %08X count %u\n", pair.colorImage.address, pair.gameCallCount);
++                for (unsigned p = 0; p < pair.projectionCount; ++p) {
++                    const auto &proj = pair.projections[p];
++                    const auto *vm = map.mapped && proj.transformsIndex < map.viewProjections.size() ?
++                        &map.viewProjections[proj.transformsIndex] : nullptr;
++                    std::fprintf(file, "projection %u type %u matrix %u mapped %u prev %u calls %u\n", p,
++                        unsigned(proj.type), proj.transformsIndex, unsigned(vm && vm->mapped),
++                        vm ? vm->prevTransformIndex : 0, proj.gameCallCount);
++                    for (unsigned c = 0; c < proj.gameCallCount; ++c) {
++                        const auto &call = proj.gameCalls[c].callDesc;
++                        std::fprintf(file, "call %u tris %u models %u %u id %016llX ui %u sky %u matched %u cover %u rect %d %d %d %d comb %08X %08X other %08X %08X tiles %u %u\n", c,
++                            call.triangleCount, call.minWorldMatrix, call.maxWorldMatrix,
++                            (unsigned long long)call.gloverRectMotion.identity, unsigned(call.gloverRectMotion.ui),
++                            unsigned(call.gloverRectMotion.sky), unsigned(call.gloverRectMotion.matched),
++                            unsigned(call.gloverScreenCover), call.rect.ulx, call.rect.uly, call.rect.lrx, call.rect.lry,
++                            call.colorCombiner.H, call.colorCombiner.L, call.otherMode.H, call.otherMode.L,
++                            call.tileIndex, call.tileCount);
++                    }
++                }
++            }
++        }
++        std::fclose(file);
++    }
++
+     // WorkloadQueue
+ 
+     WorkloadQueue::WorkloadQueue() {
+@@ -301,6 +364,7 @@
+         uint32_t overrideTargetModifier, bool uploadVelocity, bool uploadExtras, bool interpolateTiles, bool interpolateLookAts)
+     {
+ #   if ENABLE_HIGH_RESOLUTION_RENDERER
++        if (usesGloverSplitFrames()) traceGloverFrame(*this, curFrame, workloadConfig.targetRate);
+         std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
+         FramebufferManager &fbManager = ext.sharedResources->framebufferManager;
+         RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;

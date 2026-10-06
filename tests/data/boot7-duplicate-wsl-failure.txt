@@ -1,0 +1,14 @@
+  5/9 - Glover OS symbols and original-byte recompilation inputs
+==============================================================================
+[RUN] C:\Windows\system32\wsl.exe C:\Users\Admin\AppData\Local\Microsoft\WindowsApps\wsl.exe -d Ubuntu-24.04 --exec /bin/bash /mnt/d/Glover-R/build/native-src/scripts/build_glover_symbols.sh /mnt/d/Glover-R/build/native-src /mnt/d/Glover-R/build/private/glover.us.z64 /mnt/d/Glover-R/build/native-src/build/private/glover.sdk-symbols.txt
+[LOG] D:\Glover-R\build\native-src\build\logs\glover-symbols-20260930-194610.log
+PS>TerminatingError(): "The term 'C:\Windows\system32\wsl.exe C:\Users\Admin\AppData\Local\Microsoft\WindowsApps\wsl.exe' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again."
+
+BUILD STOPPED SAFELY
+The term 'C:\Windows\system32\wsl.exe C:\Users\Admin\AppData\Local\Microsoft\WindowsApps\wsl.exe' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+Nothing was uploaded and your original ROM was not modified.
+Full log: D:\Glover-R\build\native-src\build\logs\one-click-20260930-194610.log
+**********************
+Windows PowerShell transcript end
+End time: 20260930194654
+**********************

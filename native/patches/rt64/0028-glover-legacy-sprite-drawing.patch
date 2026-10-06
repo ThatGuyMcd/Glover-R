@@ -1,0 +1,82 @@
+--- a/src/gbi/rt64_gbi_f3d.cpp
++++ b/src/gbi/rt64_gbi_f3d.cpp
+@@ -148,7 +148,78 @@
+         }
+ 
+         void sprite2DBase(State *state, DisplayList **dl) {
+-            // TODO
++            // Legacy gspSprite2D uses the F3D command set, followed by one or
++            // more ScaleFlip (BE) and Draw (BD) commands. Consume those here:
++            // BD otherwise means PopMatrix to the common F3D interpreter.
++            struct Sprite {
++                uint32_t image, palette;
++                int16_t width, stride;
++                uint8_t size, format;
++                int16_t height, y, x;
++                uint32_t padding;
++            };
++            static_assert(sizeof(Sprite) == 24);
++            const auto address = state->rsp->fromSegmentedMasked((*dl)->w1);
++            const Sprite sprite = *reinterpret_cast<const Sprite *>(state->fromRDRAM(address));
++            RDP &rdp = *state->rdp;
++            RSP &rsp = *state->rsp;
++            const uint32_t image = rsp.fromSegmentedMasked(sprite.image);
++            if (sprite.palette != 0) {
++                rsp.setTextureImage(G_IM_FMT_RGBA, G_IM_SIZ_16b, 1, sprite.palette);
++                rdp.setTile(G_TX_LOADTILE, G_IM_FMT_RGBA, G_IM_SIZ_4b, 0, 256, 0, 0, 0, 0, 0, 0, 0);
++                rdp.loadTLUT(G_TX_LOADTILE, 0, 0, 1020, 0);
++            }
++            rsp.setOtherModeH(2, 14, (sprite.palette != 0 && sprite.format != G_IM_FMT_RGBA) ? (G_TT_RGBA16 << 14) : 0);
++            rsp.setOtherModeH(1, 19, 1U << 19);
++            rsp.setTexture(G_TX_RENDERTILE, 0, 1, 0xFFFF, 0xFFFF);
++            uint16_t scaleX = 1024, scaleY = 1024;
++            bool flipX = false, flipY = false;
++            while (((*dl + 1)->w0 >> 24) == 0xBE || ((*dl + 1)->w0 >> 24) == 0xBD) {
++                ++*dl;
++                const DisplayList &command = **dl;
++                if ((command.w0 >> 24) == 0xBE) {
++                    scaleX = command.w1 >> 16;
++                    scaleY = command.w1 & 0xFFFF;
++                    flipX = (command.w0 & 0xFF00) != 0;
++                    flipY = (command.w0 & 0xFF) != 0;
++                    continue;
++                }
++                if (sprite.width <= 0 || sprite.height <= 0 || sprite.stride <= 0 || scaleX == 0 || scaleY == 0) continue;
++                const int32_t frameX = int16_t(command.w1 >> 16);
++                const int32_t frameY = int16_t(command.w1 & 0xFFFF);
++                const uint32_t rowBytes = uint32_t(sprite.stride) << sprite.size >> 1;
++                const uint32_t pixelBits = 4U << sprite.size;
++                const uint32_t firstByte = uint32_t(sprite.x) * pixelBits / 8;
++                const uint32_t alignedByte = firstByte & ~7U;
++                const uint32_t firstPixel = (firstByte - alignedByte) * 8 / pixelBits;
++                const uint32_t loadPixels = firstPixel + sprite.width;
++                // RGBA32 stores half of each pixel in each TMEM bank. CI
++                // reserves the upper 2 KiB for its palette.
++                const bool rgba32 = sprite.size == G_IM_SIZ_32b;
++                const uint32_t line = ((loadPixels * (rgba32 ? 16 : pixelBits) + 63) / 64);
++                const uint32_t tmemBytes = (rgba32 || sprite.format == G_IM_FMT_CI) ? 2048 : 4096;
++                const uint32_t rowsPerLoad = std::max(1U, tmemBytes / (line * 8));
++                state->startSpriteCommand(0);
++                for (uint32_t row = 0; row < uint32_t(sprite.height); row += rowsPerLoad) {
++                    const uint32_t rows = std::min(rowsPerLoad, uint32_t(sprite.height) - row);
++                    const uint32_t source = image + (sprite.y + row) * rowBytes + alignedByte;
++                    const uint8_t loadSize = rgba32 ? G_IM_SIZ_32b : G_IM_SIZ_16b;
++                    const uint32_t loadWidth = rgba32 ? loadPixels : line * 4;
++                    rdp.setTextureImage(G_IM_FMT_RGBA, loadSize, rgba32 ? sprite.stride : rowBytes / 2, source);
++                    rdp.setTile(G_TX_LOADTILE, G_IM_FMT_RGBA, loadSize, line, 0, 0, 0, 0, 0, 0, 0, 0);
++                    rdp.loadTile(G_TX_LOADTILE, 0, 0, (loadWidth - 1) << 2, (rows - 1) << 2);
++                    rdp.setTile(G_TX_RENDERTILE, sprite.format, sprite.size, line, 0, 0, G_TX_CLAMP, G_TX_CLAMP, 0, 0, 0, 0);
++                    rdp.setTileSize(G_TX_RENDERTILE, 0, 0, (loadPixels - 1) << 2, (rows - 1) << 2);
++                    const uint32_t top = flipY ? sprite.height - row - rows : row;
++                    const int16_t s = (firstPixel + (flipX ? sprite.width - 1 : 0)) << 5;
++                    const int16_t t = flipY ? (rows - 1) << 5 : 0;
++                    rdp.drawTexRect(frameX, frameY + top * 4096 / scaleY,
++                        frameX + sprite.width * 4096 / scaleX, frameY + (top + rows) * 4096 / scaleY,
++                        G_TX_RENDERTILE, s, t, flipX ? -int32_t(scaleX) : scaleX,
++                        flipY ? -int32_t(scaleY) : scaleY, false);
++                }
++                state->endSpriteCommand();
++            }
+         }
+ 
+         void tri1(State *state, DisplayList **dl) {
