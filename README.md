@@ -12,15 +12,15 @@ Recompilation project by **ThatGuyMcd**.
 
 ## Getting started
 
-The current release is **1.0.0**. Download the package for your device from the
+The current release is **1.0.1**. Download the package for your device from the
 GitHub Releases section, then follow the steps below.
 
 | Device | Package | How to start |
 | --- | --- | --- |
-| Windows x64 | `Glover-R-1.0.0-Windows-x64.zip` | Extract the ZIP and open `Glover-R.exe`. Keep its DLLs and assets alongside it. |
-| Linux x64 | `Glover-R-1.0.0-Linux-x86_64.AppImage` | Make the AppImage executable, then open it. |
-| Linux portable | `Glover-R-1.0.0-Linux-x86_64-Portable.tar.gz` | Extract it and run `Launch-Glover-R.sh`. |
-| Steam Deck | `Glover-R-1.0.0-Linux-x86_64-SteamDeck.tar.gz` | Extract it and run `START-GLOVER-R.sh`. |
+| Windows x64 | `Glover-R-1.0.1-Windows-x64.zip` | Extract the ZIP and open `Glover-R.exe`. Keep its DLLs and assets alongside it. |
+| Linux x64 | `Glover-R-1.0.1-Linux-x86_64.AppImage` | Make the AppImage executable, then open it. |
+| Linux portable | `Glover-R-1.0.1-Linux-x86_64-Portable.tar.gz` | Extract it and run `Launch-Glover-R.sh`. |
+| Steam Deck | `Glover-R-1.0.1-Linux-x86_64-SteamDeck.tar.gz` | Extract it and run `START-GLOVER-R.sh`. |
 
 The **Release Bundle** includes all of these, the Mod SDK and Modern Camera.
 Use the **x86_64** package on Steam Deck.

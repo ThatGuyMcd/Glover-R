@@ -1,0 +1,69 @@
+--- a/src/shaders/RocketSky.hlsli
++++ b/src/shaders/RocketSky.hlsli
+@@ -4,43 +4,9 @@
+ float4 sampleRocketSkyTexture(OtherMode otherMode, RenderFlags flags, float2 uv,
+     float2 dx, float2 dy, RDPTile tile, GPUTile gpuTile, bool nextPixelBug,
+     float mipBias, float detail, float reduction, float rowOffset, bool sky) {
+-    if (sky) {
+-        uv.y += rowOffset / max(abs(tile.shiftt), 0.0001f);
+-        otherMode.H = (otherMode.H & ~(3U << G_MDSFT_TEXTFILT)) | G_TF_BILERP;
+-        flags |= (1U << 4);
+-    }
+-    float4 center = sampleTexture(otherMode, flags, uv, dx, dy, tile, gpuTile, nextPixelBug, mipBias, detail);
+-    [branch]
+-    if (reduction <= 0.0f || gpuTileFlagHighRes(gpuTile.flags) || gpuTileFlagAlphaIsCvg(gpuTile.flags)) return center;
+-
+-    // Cover every phase of the original 4x4 dither pattern. Offsets
+-    // are native texels, so output resolution/FOV cannot change the strength.
+-    float correction = (otherMode.textPersp() == G_TP_PERSP || renderFlagRect(flags)) ? 1.0f : 0.5f;
+-    float2 stepUV = 1.0f / max(abs(float2(tile.shifts, tile.shiftt) * correction), 0.0001f);
+-    OtherMode filteredMode = otherMode;
+-    filteredMode.H = (filteredMode.H & ~(3U << G_MDSFT_TEXTFILT)) | G_TF_BILERP;
+-    RenderFlags filteredFlags = flags | (1U << 4); // true bilinear only for the smoothing taps
+-    // Rocket's narrow CI8 sky is a colour gradient with horizontal dithering.
+-    // Average all eight columns, independent of the rectangle's screen phase.
+-    const bool narrowGradient = sky && abs((tile.lrs - tile.uls) - 28.0f) < 0.01f;
+-    float3 sum = float3(0.0f, 0.0f, 0.0f);
+-    float weightSum = 0.0f;
+-    [unroll]
+-    for (uint i = 0; i < 16; ++i) {
+-        float2 offset = float2(rocketSkyFilterAxis(i & 3), rocketSkyFilterAxis(i >> 2));
+-        float2 tapUV = uv + offset * stepUV;
+-        if (narrowGradient) tapUV.x = (rocketSkyGradientColumn(i & 3) + tile.uls / 4.0f) / tile.shifts;
+-        float4 tap = sampleTexture(filteredMode, filteredFlags, tapUV,
+-            dx, dy, tile, gpuTile, nextPixelBug, mipBias, detail);
+-        float3 delta = abs(tap.rgb - center.rgb);
+-        // Preserve stars/cloud edges and the source alpha. Small quantisation
+-        // steps get full weight; large colour changes do not bleed into them.
+-        float difference = max(delta.r, max(delta.g, delta.b));
+-        float weight = narrowGradient ? 1.0f : 1.0f - smoothstep(0.055f, 0.12f, difference);
+-        weight *= 1.0f - smoothstep(0.02f, 0.10f, abs(tap.a - center.a));
+-        sum += tap.rgb * weight;
+-        weightSum += weight;
+-    }
+-    if (weightSum > 0.0001f) center.rgb = lerp(center.rgb, sum / weightSum, saturate(reduction));
+-    return center;
++    // Glover excludes Rocket's skybox filtering. Keep only the common sampler:
++    // runtime-zero filter strength still leaves 16 unrolled copies in the
++    // dynamic shader, which the GPU driver must compile on a cold launch.
++    return sampleTexture(otherMode, flags, uv, dx, dy, tile, gpuTile,
++                         nextPixelBug, mipBias, detail);
+ }
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1799,15 +1799,6 @@
+                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
+                         }
+                         
+-                        if (usesGloverSplitFrames() && proj.type == Projection::Type::Perspective && proj.gameCallCount > 10 && d == 0) {
+-                            static unsigned samples = 0;
+-                            if (samples++ < 12) std::fprintf(stderr,
+-                                "[glover][raster] fb=%u/%u target=%u/%u ratio=%.3f/%.3f inv=%.3f scale=%.3f clip=%.1f,%.1f,%.1f,%.1f scissor=%d,%d,%d,%d proj00=%.4f\n",
+-                                p.fbWidth,p.fbHeight,p.targetWidth,p.targetHeight,p.aspectRatioSource,p.aspectRatioTarget,
+-                                invRatioScale,float(triangles.screenScale.x),viewportClip.x,viewportClip.y,viewportClip.width,viewportClip.height,
+-                                triangles.scissor.left,triangles.scissor.top,triangles.scissor.right,triangles.scissor.bottom,
+-                                float(drawData.modProjTransforms[proj.transformsIndex][0][0]));
+-                        }
+                         if (triangles.vertexTestZ && usesViewport) {
+                             instanceDrawCallVector[vertexTestZCallIndex].vertexTestZ.indexCount += call.callDesc.triangleCount * 3;
+                             vertexTestZFaceIndicesStart += call.callDesc.triangleCount * 3;

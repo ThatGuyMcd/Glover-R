@@ -67,6 +67,6 @@ bool rocket::select_rom(const std::filesystem::path& path,std::string& error) {
 bool rocket::rom_ready() { return ready.load(); }
 bool rocket::start_game_once() {
     if (!ready.load() || started.exchange(true)) return false;
-    std::fprintf(stderr,"[glover][boot] first safe VI presentation reached; starting game\n");
+    std::fprintf(stderr,"[glover][boot] first safe VI presentation with shaders ready; starting game\n");
     std::u8string id{kGameId};recomp::start_game(id); return true;
 }

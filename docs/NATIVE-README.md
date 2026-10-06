@@ -1,10 +1,19 @@
-# Glover-R — 1.0.0
+# Glover-R — 1.0.1
 
 Glover-R lets you play Glover on Windows and Linux with widescreen, smoother
 frame rates and a modern camera. The launcher and F1 settings use the same
 red and coin-gold design, with 75% opaque in-game panels.
 
 Recompilation project by **ThatGuyMcd**.
+
+## What's changed in 1.0.1
+
+The first launch should now be much quicker! Glover no longer compiles the
+unused Rocket skybox filter. Graphics preparation has a progress display,
+and the game starts once its shaders are ready.
+
+I've also removed an old graphics diagnostic that could crash the game when
+using the original frame rate.
 
 ## Getting started
 
@@ -69,8 +78,8 @@ runtime needs them; Glover doesn't use the Rocket ROM or saves.
 ## Logs and testing
 
 Windows gameplay, menus and Modern Camera controls have been tested.
-Windows and Linux builds pass ten native test suites each, plus 306 Python
-checks for the 1.0.0 release. Longer sessions, full-game completion and Linux
+Windows and Linux builds pass ten native test suites each, plus 314 Python
+checks for the 1.0.1 release (one optional check was skipped). Longer sessions, full-game completion and Linux
 hardware gameplay still need testing.
 
 **Graphics > Diagnostics** shows the live log. Build logs are collected in

@@ -480,6 +480,7 @@ class CheckedRendererAdapterTests(unittest.TestCase):
             '    RT64::setRocketPostProcess(\n'
             '        static_cast<std::uint32_t>(settings.post_process),\n'
             '        settings.post_process_strength / 100.0F);',
+            '    if (present_count_ == 1) {\n        rocket::start_game_once();\n    }',
             '    application_->state->rsp->reset();',
             '    application_->processDisplayLists(rdram_snapshot,\n'
             '                                      task->t.data_ptr & 0x03FFFFFF, 0, true);',
@@ -499,6 +500,8 @@ class CheckedRendererAdapterTests(unittest.TestCase):
         self.assertIn('static_cast<std::uint32_t>(settings.post_process)',result)
         self.assertIn('setRocketSkyDitherReduction(0.0F)',result)
         self.assertIn('first display list ucode=',result)
+        self.assertIn('shaderUber->pipelinesReady()',result)
+        self.assertNotIn('if (present_count_ == 1)',result)
         self.assertNotIn('application_->state->rsp->reset()',result)
         self.assertNotIn('Mode::PresentEarly;',result)
         self.assertEqual(result.count('Mode::Console;'),2)

@@ -180,6 +180,22 @@ def adapt_builder(text: str) -> str:
              "@('--build',$WindowsBuild,'--target','GloverOverlayRegistration','--parallel') $RuntimeLog\n"
              '        if ($overlayExit -ne 0) { throw "Generated overlay registration did not compile. See $RuntimeLog" }\n')
     text = once(text, anchor, guard+anchor, 'early overlay compilation')
+    text = once(text, "            Copy-Item (Join-Path $RocketDir '*') $Stage -Recurse -Force",
+        r'''            # A compiler cache can retain review executables and local INI files.
+            # Ship only the current runtime and its required dependencies/assets.
+            foreach ($runtimeFile in @('Glover-R.exe','SDL2.dll','dxcompiler.dll','dxil.dll')) {
+                $runtimePath = Join-Path $RocketDir $runtimeFile
+                if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+                    throw "Required runtime file is missing: $runtimeFile"
+                }
+                Copy-Item -LiteralPath $runtimePath -Destination $Stage -Force
+            }
+            $runtimeSymbols = Join-Path $RocketDir 'Glover-R.pdb'
+            if (Test-Path -LiteralPath $runtimeSymbols -PathType Leaf) {
+                Copy-Item -LiteralPath $runtimeSymbols -Destination $Stage -Force
+            }
+            Copy-Item -LiteralPath (Join-Path $RocketDir 'assets') -Destination $Stage -Recurse -Force''',
+        'only current Windows runtime files in release')
     return rebrand(text)
 
 
@@ -198,8 +214,16 @@ def adapt_linux(text: str) -> str:
 
 
 def adapt_renderer(text: str) -> str:
+    text = once(text,
+        '    if (present_count_ == 1) {\n        rocket::start_game_once();\n    }',
+        '    // The initial blank VI can be presented while fallback pipelines compile.\n'
+        '    // Start the guest only when every pipeline is published as ready; the\n'
+        '    // graphics task must never hold the presentation lock waiting for them.\n'
+        '    if (application_->rasterShaderCache && application_->rasterShaderCache->shaderUber &&\n'
+        '        application_->rasterShaderCache->shaderUber->pipelinesReady()) {\n'
+        '        rocket::start_game_once();\n    }', 'safe shader readiness before guest startup')
     text = once(text, '#include "hle/rt64_state.h"',
-        '#include "hle/rt64_state.h"\n#include "common/rt64_glover_configuration.h"\n#include "glover_render_diagnostics.hpp"\n#include "glover_frame_cadence.hpp"',
+        '#include "hle/rt64_state.h"\n#include "render/rt64_raster_shader_cache.h"\n#include "common/rt64_glover_configuration.h"\n#include "glover_render_diagnostics.hpp"\n#include "glover_frame_cadence.hpp"',
         'private renderer diagnostics')
     text = once(text, '    update_performance_stats();',
         '    update_performance_stats();\n    glover_capture_frame(*application_);',
@@ -519,6 +543,19 @@ def adapt_linux_packager(text: str) -> str:
     return rebrand(text)
 
 
+def adapt_startup_ui(text: str) -> str:
+    text = once(text, '#include "hle/rt64_application.h"',
+        '#include "hle/rt64_application.h"\n#include "glover_startup_ui.hpp"', 'startup progress UI include')
+    text = once(text, '    const bool visible = g_overlay_visible.load(std::memory_order_acquire);',
+        '    const bool preparing = glover::startup::preparing(application);\n'
+        '    const bool visible = g_overlay_visible.load(std::memory_order_acquire);', 'startup progress visibility')
+    text = once(text, '    if (!visible && !diagnostics && mod_hud.empty()) {',
+        '    if (!preparing && !visible && !diagnostics && mod_hud.empty()) {', 'retain startup progress presentation')
+    text = once(text, '    if(!mod_hud.empty()) {',
+        '    glover::startup::draw(application);\n\n    if(!mod_hud.empty()) {', 'draw startup progress')
+    return text
+
+
 def adapt_ui(text: str) -> str:
     text = between(text, '        ImGui::TextUnformatted("Sky dithering reduction");',
                    '        ImGui::TextUnformatted("Replacement texture mip bias");',
@@ -714,6 +751,7 @@ def build_payload(project: Path, reference: Path) -> tuple[dict[str,bytes],dict]
             text=payload[name].decode('utf-8')
             text=adapter(text,once,between) if name.endswith('runtime_ui.cpp') else adapter(text,once)
             payload[name]=text.encode('utf-8')
+        payload['src/runtime_ui.cpp'] = adapt_startup_ui(payload['src/runtime_ui.cpp'].decode('utf-8')).encode('utf-8')
     # Install exactly the same contract module used by this assembler. No
     # separate release-specific validator is maintained in the native tree.
     payload[CONTRACT_PATH] = Path(__file__).with_name('native_contract.py').read_bytes()

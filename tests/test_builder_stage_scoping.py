@@ -94,6 +94,8 @@ class BuilderStageTests(unittest.TestCase):
         self.assertNotIn('NSUE.elf', result)
         self.assertNotIn('RecompiledFuncs', result) # cleaned generation is owned by generate_native.py
         self.assertEqual(result.count('generate_native.py'), 1)
+        self.assertNotIn("Copy-Item (Join-Path $RocketDir '*')", result)
+        self.assertIn("@('Glover-R.exe','SDL2.dll','dxcompiler.dll','dxil.dll')", result)
 
     def test_crlf_and_lf_source_produce_identical_output(self):
         text = fixture()

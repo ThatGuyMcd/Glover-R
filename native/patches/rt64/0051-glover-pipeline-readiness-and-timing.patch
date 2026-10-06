@@ -1,0 +1,73 @@
+--- a/src/render/rt64_raster_shader.h
++++ b/src/render/rt64_raster_shader.h
+@@ -7,6 +7,8 @@
+ #include "rt64_shader_common.h"
+ 
+ #include <condition_variable>
++#include <atomic>
++#include <chrono>
+ #include <mutex>
+ #include <thread>
+ 
+@@ -85,6 +87,14 @@
+         std::mutex firstPipelineMutex;
+         std::condition_variable firstPipelineCondition;
+         bool pipelinesCreated = false;
++        // Publish readiness independently of join(), so startup can keep
++        // presenting its loading screen instead of blocking the first task.
++        std::atomic<uint32_t> completedPipelines{0};
++        const std::chrono::steady_clock::time_point compilationStarted = std::chrono::steady_clock::now();
++        bool pipelinesReady() const { return completedPipelines.load(std::memory_order_acquire) == 8; }
++        double compilationMilliseconds() const {
++            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - compilationStarted).count();
++        }
+         std::unique_ptr<RenderPipelineLayout> pipelineLayout;
+         std::vector<std::vector<PipelineCreation>> pipelineThreadCreations;
+         std::vector<std::unique_ptr<std::thread>> pipelineThreads;
+--- a/src/render/rt64_raster_shader.cpp
++++ b/src/render/rt64_raster_shader.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_raster_shader.h"
++#include <cstdio>
+ 
+ #include "xxHash/xxh3.h"
+ 
+@@ -572,6 +573,7 @@
+         for (const PipelineCreation &creation : pipelineThreadCreations[threadIndex]) {
+             uint32_t pipelineIndex = pipelineStateIndex(creation.zCmp, creation.zUpd, creation.cvgAdd);
+ 
++            const auto pipelineStarted = std::chrono::steady_clock::now();
+             if (pipelineIndex == 0) {
+                 firstPipelineMutex.lock();
+                 pipelines[pipelineIndex] = RasterShader::createPipeline(creation);
+@@ -581,11 +583,17 @@
+             else {
+                 pipelines[pipelineIndex] = RasterShader::createPipeline(creation);
+             }
++            const double milliseconds = std::chrono::duration<double, std::milli>(
++                std::chrono::steady_clock::now() - pipelineStarted).count();
++            const auto completed = completedPipelines.fetch_add(1, std::memory_order_release) + 1;
++            std::fprintf(stderr, "[glover][startup] pipeline=%u ms=%.2f ready=%u/8 total_ms=%.2f\n",
++                         pipelineIndex, milliseconds, completed, compilationMilliseconds());
+         }
+     }
+ 
+     void RasterShaderUber::waitForPipelineCreation() {
+         if (!pipelinesCreated) {
++            const auto waitStarted = std::chrono::steady_clock::now();
+             for (std::unique_ptr<std::thread> &thread : pipelineThreads) {
+                 thread->join();
+             }
+@@ -595,6 +603,10 @@
+             vertexShader.reset();
+             pixelShader.reset();
+             pipelinesCreated = true;
++            const double waited = std::chrono::duration<double, std::milli>(
++                std::chrono::steady_clock::now() - waitStarted).count();
++            std::fprintf(stderr, "[glover][startup] pipelines_ready total_ms=%.2f join_wait_ms=%.2f\n",
++                         compilationMilliseconds(), waited);
+         }
+     }
+ 
